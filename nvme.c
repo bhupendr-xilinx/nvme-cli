@@ -107,6 +107,8 @@ struct passthru_config {
 	bool	write;
 	__u8	prefill;
 	bool	latency;
+	__u8    csi;
+	__u32	offset;
 };
 
 struct get_reg_config {
@@ -9035,6 +9037,8 @@ static int passthru(int argc, char **argv, bool admin,
 	const char *re = "set dataflow direction to receive";
 	const char *wr = "set dataflow direction to send";
 	const char *prefill = "prefill buffers with known byte-value, default 0";
+	const char *csi = "Command slot identifier";
+	const char *doff = "Data offset";
 
 	_cleanup_huge_ struct nvme_mem_huge mh = { 0, };
 	_cleanup_nvme_dev_ struct nvme_dev *dev = NULL;
@@ -9065,6 +9069,7 @@ static int passthru(int argc, char **argv, bool admin,
 		.cdw13		= 0,
 		.cdw14		= 0,
 		.cdw15		= 0,
+		.csi 		= 0,
 		.input_file	= "",
 		.metadata	= "",
 		.raw_binary	= false,
@@ -9073,6 +9078,7 @@ static int passthru(int argc, char **argv, bool admin,
 		.read		= false,
 		.write		= false,
 		.latency	= false,
+		.offset		= 0,
 	};
 
 	NVME_ARGS(opts,
@@ -9098,7 +9104,9 @@ static int passthru(int argc, char **argv, bool admin,
 		  OPT_FLAG("dry-run",      'd', &cfg.dry_run,      dry),
 		  OPT_FLAG("read",         'r', &cfg.read,         re),
 		  OPT_FLAG("write",        'w', &cfg.write,        wr),
-		  OPT_FLAG("latency",      'T', &cfg.latency,      latency));
+		  OPT_FLAG("latency",      'T', &cfg.latency,      latency),
+		  OPT_UINT("csi",          'c', &cfg.csi,          csi),
+                  OPT_UINT("doff",         'o', &cfg.offset,       doff));
 
 	err = parse_and_open(&dev, argc, argv, desc, opts);
 	if (err)
@@ -9190,6 +9198,8 @@ static int passthru(int argc, char **argv, bool admin,
 		printf("cdw14        : %08x\n", cfg.cdw14);
 		printf("cdw15        : %08x\n", cfg.cdw15);
 		printf("timeout_ms   : %08x\n", nvme_cfg.timeout);
+		printf("csi	     : %02x\n", cfg.csi);
+		printf("doff         : %08x\n", cfg.offset);
 	}
 	if (cfg.dry_run)
 		return 0;
@@ -9205,7 +9215,8 @@ static int passthru(int argc, char **argv, bool admin,
 					      cfg.cdw14,
 					      cfg.cdw15, cfg.data_len, data,
 					      cfg.metadata_len,
-					      mdata, nvme_cfg.timeout, &result);
+					      mdata, nvme_cfg.timeout, &result,
+						  cfg.csi);
 	else
 		err = nvme_io_passthru(dev_fd(dev), cfg.opcode, cfg.flags,
 				       cfg.rsvd,
@@ -10207,7 +10218,7 @@ static int nvme_mi(int argc, char **argv, __u8 admin_opcode, const char *desc)
 
 	err = nvme_cli_admin_passthru(dev, admin_opcode, 0, 0, cfg.namespace_id, 0, 0,
 				      cfg.nmimt << 11 | 4, cfg.opcode, cfg.nmd0, cfg.nmd1, 0, 0,
-				      cfg.data_len, data, 0, NULL, 0, &result);
+				      cfg.data_len, data, 0, NULL, 0, &result, 0, 0);
 	if (err < 0) {
 		nvme_show_error("nmi_recv: %s", nvme_strerror(errno));
 	} else if (err) {

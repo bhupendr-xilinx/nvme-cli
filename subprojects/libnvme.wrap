@@ -1,5 +1,5 @@
 [wrap-git]
-url = https://github.com/linux-nvme/libnvme.git
+url = https://github.com/bhupendr-xilinx/libnvme.git
 revision = 56ca8b4d3180c89f80ee5c0380046f124f39ece4
 
 [provide]

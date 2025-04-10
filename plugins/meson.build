@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 
 sources += [
+  'plugins/amd/amd-nvme.c',
   'plugins/amzn/amzn-nvme.c',
   'plugins/dapustor/dapustor-nvme.c',
   'plugins/dell/dell-nvme.c',

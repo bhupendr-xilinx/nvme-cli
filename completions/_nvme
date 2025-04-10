@@ -124,6 +124,7 @@ _nvme () {
 	'fdp:FDP plug-in extensions'
 	'micron:Micron plug-in extensions'
 	'dapustor:DapuStor plug-in extensions'
+	'amd:AMD plug-in extensions'
 	'help:print brief descriptions of all nvme commands'
 	'json:dump output in json format'
 	)
@@ -1687,6 +1688,10 @@ _nvme () {
 			-r':alias for --read'
 			--write':set dataflow direction to send'
 			-w':alias for --write'
+			--csi':set command slot identifier'
+			-c':alias for --csi'
+			--doff':data offset'
+			-o':alias for --doff'
 			)
 			_arguments '*:: :->subcmds'
 			_describe -t commands "nvme admin-passthru options" _admin
@@ -2893,6 +2898,17 @@ _nvme () {
 			_arguments '*:: :->subcmds'
 			_describe -t commands "nvme dapustor options" _dapustor
 			;;
+		(amd)
+                        local _amd
+                        _amd=(
+                        config-ae':Enable/Disable ASYNC events'
+                        config-get':NVME-MI configuration get command'
+                        ctrl-primitive':Submit NVME-MI control primitive command'
+                        help':Display this help'
+                        )
+                        _arguments '*:: :->subcmds'
+                        _describe -t commands "nvme amd options" _amd
+                        ;;
 		(help)
 			local _h
 			_h=( id-ctrl id-ns list-ns id-iocs create-ns delete-ns attach-ns detach-ns

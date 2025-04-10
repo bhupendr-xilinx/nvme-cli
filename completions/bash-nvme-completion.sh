@@ -250,7 +250,7 @@ nvme_list_opts () {
 			--cdw11= -5 --cdw12= -6 --cdw13= -7 --cdw14= -8 \
 			--cdw15= -9 --input-file= -i --raw-binary -b \
 			--show-command -s --dry-run -d --read -r --write -w \
-			--latency -T"
+			--latency -T --csi= -c --doff= -c"
 			;;
 		"io-passthru")
 		opts+=" --opcode= -O --flags= -f --prefill= -p --rsvd= -R \
@@ -539,6 +539,46 @@ nvme_list_opts () {
 	else
 		COMPREPLY+=( $( compgen $compargs -W "$vals" -- $val ) )
 	fi
+
+	return 0
+}
+
+plugin_amd_opts () {
+	local opts=""
+	local compargs=""
+
+	local nonopt_args=0
+	for (( i=0; i < ${#words[@]}-1; i++ )); do
+		if [[ ${words[i]} != -* ]]; then
+			let nonopt_args+=1
+		fi
+	done
+
+	if [ $nonopt_args -eq 3 ]; then
+		opts="/dev/nvme* "
+	fi
+
+	opts+=" "
+
+	case "$1" in
+		"set-ae")
+		opts+=" --aerd= -r --aemd= -d \
+			--numaee= -n --enable_aeid_list= -e \
+			--disable_aeid_list= -D --aeelver= -v \
+			--aeetl= -t --aeelhl= -h"
+			;;
+		"config-get")
+		opts+=" --cid= -c --pid= -p"
+			;;
+		"ctrl-primitive")
+		opts+=" --action= -a"
+			;;
+		"help")
+		opts+=$NO_OPTS
+			;;
+	esac
+
+	COMPREPLY+=( $( compgen $compargs -W "$opts" -- $cur ) )
 
 	return 0
 }
@@ -1636,6 +1676,7 @@ _nvme_subcmds () {
 	# Associative array of plugins and associated subcommands
 	# Order here is same as PLUGIN_OBJS in Makefile
 	typeset -Ar _plugin_subcmds=(
+		[amd]="config-ae config-get ctrl-primitive"
 		[intel]="id-ctrl internal-log lat-stats \
 			set-bucket-thresholds lat-stats-tracking \
 			market-name smart-log-add temp-stats"
@@ -1702,6 +1743,7 @@ _nvme_subcmds () {
 
 	# Associative array mapping plugins to corresponding option completions
 	typeset -Ar _plugin_funcs=(
+		[amd]="plugin_amd_opts"
 		[intel]="plugin_intel_opts"
 		[amzn]="plugin_amzn_opts"
 		[memblaze]="plugin_memblaze_opts"
