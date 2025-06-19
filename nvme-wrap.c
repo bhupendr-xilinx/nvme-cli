@@ -379,7 +379,7 @@ int nvme_cli_admin_passthru(struct nvme_dev *dev, __u8 opcode, __u8 flags,
 				__u32 cdw10, __u32 cdw11, __u32 cdw12, __u32 cdw13,
 				__u32 cdw14, __u32 cdw15, __u32 data_len,
 				void *data, __u32 metadata_len, void *metadata,
-				__u32 timeout_ms, __u32 *result, __u8 csi,  __u32 offset)
+				__u32 timeout_ms, __u32 *result, __u8 csi, __u32 offset)
 {
 	int __rc;
 	if (dev->type == NVME_DEV_DIRECT) {
@@ -396,6 +396,23 @@ int nvme_cli_admin_passthru(struct nvme_dev *dev, __u8 opcode, __u8 flags,
 
 	printf("__rc: %d\n", __rc);
 	return __rc;
+}
+
+int nvme_cli_admin_batch_passthru(struct nvme_dev *dev, __u8 opcode, __u8 flags,
+				  __u16 rsvd, __u32 nsid, __u32 cdw2, __u32 cdw3,
+				  __u32 cdw10, __u32 cdw11, __u32 cdw12, __u32 cdw13,
+				  __u32 cdw14, __u32 cdw15, __u32 data_len,
+				  void *data, __u32 metadata_len, void *metadata,
+				  __u32 timeout_ms, __u32 *result, __u8 csi, __u32 offset)
+{
+	if (dev->type != NVME_DEV_MI)
+		return -ENODEV;
+
+	return nvme_mi_admin_batch_passthru(dev->mi.ctrl, opcode, flags, rsvd,
+						nsid, cdw2, cdw3, cdw10, cdw11, cdw12,
+						cdw13, cdw14, cdw15, data_len, data,
+						metadata_len, metadata, timeout_ms,
+						result, csi, offset);
 }
 
 /* The MI & direct interfaces don't have an exactly-matching API for

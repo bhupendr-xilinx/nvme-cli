@@ -2904,6 +2904,7 @@ _nvme () {
                         config-ae':Enable/Disable ASYNC events'
                         config-get':NVME-MI configuration get command'
                         ctrl-primitive':Submit NVME-MI control primitive command'
+						config-hs-change':Submit NVME-MI configuration health status change command'
                         help':Display this help'
                         )
                         _arguments '*:: :->subcmds'

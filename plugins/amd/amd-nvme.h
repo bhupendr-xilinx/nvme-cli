@@ -12,6 +12,10 @@ PLUGIN(NAME("amd", "AMD vendor specific extensions", NVME_VERSION),
 		ENTRY("config-ae", "Submit a NVMe-MI Configuration set command for Async event, return results", config_ae)
 		ENTRY("config-get", "Submit a NVMe-MI Configuration get command, return results", config_get)
 		ENTRY("ctrl-primitive", "Submit a NVMe-MI Control primitive command, return results", ctrl_primitive)
+		ENTRY("config-hs-change", "Submit a NVMe-MI Configuration set command for health Status change, return results", set_health_status_change)
+		ENTRY("nvm-ss-hs-poll", "Submit a NVMe-MI NVM Subsystem health status poll command, return results", nvm_ss_hlth_stat_poll)
+		ENTRY("ctrlr-hs-poll", "Submit a NVMe-MI Controller health status poll command, return results", ctrlr_hlth_stat_poll)
+		ENTRY("admin", "Send NVMe Admin commmands", admin_cmd)
 		//ENTRY("enp", "Submit an NVMe ENP admin passthrough command, return results", enp_admin_passthru)
 	)
 );

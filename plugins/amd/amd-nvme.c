@@ -15,6 +15,7 @@
 #include "plugin.h"
 #include "linux/types.h"
 #include "nvme-print.h"
+#include "nvme-wrap.h"
 
 #define CREATE_CMD
 #include "amd-nvme.h"
@@ -34,6 +35,8 @@ enum nvme_mi_command {
 	MGMT_EP_BUFFER_WRITE,
 	SHUTDOWN,
 };
+
+
 
 typedef struct ae_supp_list_hdr_s {
 	uint8_t num_ae_supp_ds;
@@ -187,6 +190,168 @@ struct get_config {
 	__u8 pid;
 	__u8 csi;
 };
+
+struct admin_command{
+  	__u8	opcode;
+	__u8	flags;
+	__u16	rsvd;
+	__u32	namespace_id;
+	__u32	data_len;
+	__u32	metadata_len;
+	__u32	cdw2;
+	__u32	cdw3;
+	__u32	cdw10;
+	__u32	cdw11;
+	__u32	cdw12;
+	__u32	cdw13;
+	__u32	cdw14;
+	__u32	cdw15;
+	char	*input_file;
+	char	*metadata;
+	bool	raw_binary;
+	bool	show_command;
+	bool	dry_run;
+	bool	read;
+	bool	write;
+	__u8	prefill;
+	bool	latency;
+	__u8    csi;
+	__u32	offset;
+	__u32	timeout_ms;
+	bool flood;
+};
+
+struct health_status_change {  
+    bool rdy;          // Ready (bit 0)  
+    bool cfs;          // Controller Fatal Status (bit 1)  
+    bool shst;         // Shutdown Status (bit 2)  
+    bool nssro;        // NVM Subsystem Reset Occurred (bit 3)  
+    bool ceco;         // Controller Enable Change Occurred (bit 4)  
+    bool nac;          // Namespace Attribute Changed (bit 5)  
+    bool fa;           // Firmware Activated (bit 6)  
+    bool cschng;       // Controller Status Change (bit 7)  
+    bool ctemp;        // Composite Temperature (bit 8)  
+    bool pdlu;         // Percentage Used (bit 9)  
+    bool spare;        // Available Spare (bit 10)  
+    bool cwarn;        // Critical Warning (bit 11)  
+    bool tcida;        // Telemetry Controller-Initiated Data Available (bit 12)  
+    __u32 reserved : 19;    // Reserved (bits 13 to 31)  
+};
+
+struct composite_controller_status_flags {  
+	__u16 rdy : 1;          // Ready (bit 0)  
+	__u16 cfs : 1;          // Controller Fatal Status (bit 1)  
+	__u16 shst : 1;         // Shutdown Status (bit 2)
+	__u16 reserved_1 : 1;    // Reserved (bit 3 )  
+	__u16 nssro : 1;        // NVM Subsystem Reset Occurred (bit 4)  
+	__u16 ceco : 1;         // Controller Enable Change Occurred (bit 5)  
+	__u16 nac : 1;          // Namespace Attribute Changed (bit 6)  
+	__u16 fa : 1;           // Firmware Activated (bit 7)  
+	__u16 cschng : 1;       // Controller Status Change (bit 8)  
+	__u16 ctemp : 1;        // Composite Temperature (bit 9)  
+	__u16 pdlu : 1;         // Percentage Used (bit 10)  
+	__u16 spare : 1;        // Available Spare (bit 11)  
+	__u16 cwarn : 1;        // Critical Warning (bit 12)  
+	__u16 tcida : 1;        // Telemetry Controller-Initiated Data Available (bit 13)  
+	__u16 reserved_2 : 2;    // Reserved (bits 14 to 15 )  
+};
+
+/**  
+ * Controller Health Status Poll – NVMe Management Dword 0  
+ */  
+
+
+struct controller_health_status_poll_dwd0 {
+   		__u32 starting_controller_id;  // Bits 0-15: Starting Controller ID (SCTCTL)
+		__u32 maximum_response_entries; // Bits 16-23: Maximum Response Entries (MAXRENT)
+   		__u32 include_pci_functions;      // Bit 24: Include PCI Functions (INCF)
+   		__u32 include_sr_iov_physical_functions; // Bit 25: Include SR-IOV Physical Functions (INCPFI)
+   		__u32 include_sr_iov_virtual_functions;  // Bit 26: Include SR-IOV Virtual Functions (INCVI)
+   		__u32 reserved2;                  // Bits 27-30: Reserved
+   		__u32 report_all;                 // Bit 31: Report All (ALL)
+};
+
+/**  
+ * Controller Health Status Poll – NVMe Management Dword 1  
+ */  
+struct controller_health_status_poll_dwd1{  
+   	__u32 controller_status_changes;       // Bit 0: Controller Status Changes (CSTS)  
+   	__u32 composite_temperature_changes;   // Bit 1: Composite Temperature Changes (CTEMP)  
+   	__u32 percentage_used;                 // Bit 2: Percentage Used (PDLU)  
+   	__u32 available_spare;                 // Bit 3: Available Spare (SPARE)  
+   	__u32 critical_warning;                // Bit 4: Critical Warning (CWARN)  
+   	__u32 reserved;                       // Bits 5-30: Reserved  
+   	__u32 clear_changed_flags;             // Bit 31: Clear Changed Flags (CCF)  
+};
+
+/**  
+ * NVM Subsystem Health Data Structure (NSHDS)  
+ * As defined in NVM Express Management Interface Specification, Revision 2.0, Figure 108  
+ */  
+typedef struct {  
+    /* Byte 0: NVM Subsystem Status (NSS) */  
+    union {  
+        uint8_t raw;  
+        struct {  
+            uint8_t reserved1                    : 2;  /* Bits 0-1: Reserved */  
+            uint8_t port1_pcie_link_active       : 1;  /* Bit 2: P1LA - Port 1 PCIe Link Active */  
+            uint8_t port0_pcie_link_active       : 1;  /* Bit 3: P0LA - Port 0 PCIe Link Active */  
+            uint8_t reset_not_required           : 1;  /* Bit 4: RNR - Reset Not Required */  
+            uint8_t drive_functional             : 1;  /* Bit 5: DF - Drive Functional */  
+            uint8_t sanitize_failure_mode        : 1;  /* Bit 6: SFM - Sanitize Failure Mode */  
+            uint8_t aem_transmission_failure     : 1;  /* Bit 7: ATF - AEM Transmission Failure */  
+        } bits;  
+    } nvm_subsystem_status;  
+      
+    /* Byte 1: SMART Warnings (SW) */  
+    /* Inverted value of the Critical Warning field of SMART / Health Information log page */  
+    uint8_t smart_warnings;  
+      
+    /* Byte 2: Composite Temperature (CTEMP) */  
+    /*   
+     * Range interpretation:  
+     * 00h to 7Eh: 0°C to 126°C (value is temperature in Celsius)  
+     * 7Fh: ≥ 127°C  
+     * 80h: Temperature data is greater than 5s old  
+     * 81h: Temperature data not accurate due to sensor failure  
+     * 82h to C3h: Reserved  
+     * C4h: ≤ -60°C  
+     * C5h to FFh: -59°C to -1°C (two's complement of temperature in Celsius)  
+     */  
+    uint8_t composite_temperature;  
+      
+    /* Byte 3: Percentage Drive Life Used (PDLU) */  
+    /* 0-254: Percentage of drive life used, 255: ≥ 255% */  
+    uint8_t percentage_drive_life_used;  
+      
+    union {
+        uint8_t raw[2];
+        struct {
+            uint16_t ready : 1;                              // Bit 0: Ready (RDY)
+            uint16_t controller_fatal_status : 1;            // Bit 1: Controller Fatal Status (CFS)
+            uint16_t shutdown_status : 1;                    // Bit 2: Shutdown Status (SHST)
+            uint16_t reserved2 : 1;                          // Bit 3: Reserved
+            uint16_t nvm_subsystem_reset_occurred : 1;       // Bit 4: NVM Subsystem Reset Occurred (NSSRO)
+            uint16_t controller_enable_change_occurred : 1;  // Bit 5: Controller Enable Change Occurred (CECO)
+            uint16_t namespace_attribute_changed : 1;        // Bit 6: Namespace Attribute Changed (NAC)
+            uint16_t firmware_activated : 1;                 // Bit 7: Firmware Activated (FA)
+            uint16_t controller_status_change : 1;           // Bit 8: Controller Status Change (CSTS)
+            uint16_t composite_temperature_change : 1;       // Bit 9: Composite Temperature Change (CTEMP)
+            uint16_t percentage_used : 1;                    // Bit 10: Percentage Used (PDLU)
+            uint16_t available_spare : 1;                    // Bit 11: Available Spare (SPARE)
+            uint16_t critical_warning : 1;                   // Bit 12: Critical Warning (CWARN)
+            uint16_t telemetry_controller_initiated_data_available : 1; // Bit 13: TCIDA
+            uint16_t reserved1 : 2;                         // Bits 14-15: Reserved
+        } bits;
+    } flags;
+
+    /* Bytes 4-5: Composite Controller Status (CCS) */  
+    //struct composite_controller_status_flags ccs;  
+      
+    /* Bytes 6-7: Reserved */  
+    uint8_t reserved2[2];  
+      
+} __attribute__((packed)) nvm_subsystem_health_data_structure_t;
 
 int parse_mi_resp_status(uint8_t status, uint8_t *resp_buffer) {
 	int rc = -1;
@@ -428,7 +593,7 @@ void parse_ae_occ_spec_info(uint8_t ae_occ_id,
 			printf("  Min Available Spare (MAS): %d\n", ae_occ_spec_info);
 			break;
 		case AE_SMART_WARNINGS:
-			printf("  SMART Warnings Value (CWV): %d\n", ae_occ_spec_info);
+			printf("  SMART Warnings Value (SWV): %d\n", ae_occ_spec_info);
 			break;
 		case AE_TELEMETRY_CTRL_INIT_DATA_AVL:
 			printf("  AE Occurrence ID: Telemetry Controller Init Data Available (ID: %02x)\n", ae_occ_id);
@@ -738,6 +903,7 @@ static int config_get(int argc, char **argv, struct command *cmd, struct plugin 
 
     const char *cid = "Configuration identifier (required)";
 	const char *pid = "Port ID";
+	const char *csi = "Command slot identifier";
 	
 	_cleanup_nvme_dev_ struct nvme_dev *dev = NULL;
 	__u32 result;
@@ -778,6 +944,9 @@ static int ctrl_primitive(int argc, char **argv, struct command *cmd, struct plu
 		);
 
     const char *action = "Control primitive action to be taken (required)";
+	const char *csi = "Command slot identifier";
+	const char *cpsp = "Control Primitive specific parameter";
+	const char *tag = "Tag value";
 	
 	
 	_cleanup_nvme_dev_ struct nvme_dev *dev = NULL;
@@ -790,14 +959,23 @@ static int ctrl_primitive(int argc, char **argv, struct command *cmd, struct plu
 	
 	struct config {
 		char		*action;
+		__u8 csi;
+		__u8 cpsp;
+		__u8 tag;
 	};
 
 	struct config cfg = {
 		.action = "",
+		.csi = 0,
+		.cpsp = 0,
+		.tag = 0,
 	};
 
 	OPT_ARGS(opts) = {
 		  OPT_STR("action", 'a', &cfg.action, action),
+		  OPT_UINT("csi", 'c', &cfg.csi, csi),
+		  OPT_UINT("cpsp", 's', &cfg.cpsp, cpsp),
+		  OPT_UINT("tag", 't', &cfg.tag, tag),
 		OPT_END()
 	};
 
@@ -846,8 +1024,9 @@ static int ctrl_primitive(int argc, char **argv, struct command *cmd, struct plu
 		return -1;
 	}
 
-	rc = nvme_mi_control(dev->mi.ep, opcode, 0, &cpsr); /* cpsp reserved in example */
+	rc = nvme_mi_control(dev->mi.ep, opcode, cfg.cpsp, &cpsr, cfg.csi, cfg.tag); /* cpsp reserved in example */
 	if (rc) {
+		printf("Response: %d\n", rc);
 		warn("can't perform primitive control command");
 		return -1;
 	}
@@ -855,35 +1034,35 @@ static int ctrl_primitive(int argc, char **argv, struct command *cmd, struct plu
 	printf("NVMe control primitive\n");
 	switch (opcode) {
 	case nvme_mi_control_opcode_pause:
-		printf(" Pause : cspr is %#x\n", cpsr);
-		printf("  Pause Flag Status Slot 0: %s\n", (cpsr & (1 << 0)) ? "Yes" : "No");
-		printf("  Pause Flag Status Slot 1: %s\n", (cpsr & (1 << 1)) ? "Yes" : "No");
+		printf(" cpsr : %#x\n", cpsr);
+		printf(" PFSS0: %s\n", (cpsr & (1 << 0)) ? "Yes" : "No");
+		printf(" PFSS1: %s\n", (cpsr & (1 << 1)) ? "Yes" : "No");
 		break;
 	case nvme_mi_control_opcode_resume:
-		printf(" Resume : cspr is %#x\n", cpsr);
+		printf(" RES:%#x\n", cpsr);
 		break;
 	case nvme_mi_control_opcode_abort:
-		printf(" Abort : cspr is %#x\n", cpsr);
-		printf("  Command Aborted Status: %s\n", cpas_state[cpsr & 0x3]);
+		printf(" cpsr: %#x\n", cpsr);
+		printf(" CAS: %s\n", cpas_state[cpsr & 0x3]);
 		break;
 	case nvme_mi_control_opcode_get_state:
-		printf(" Get State : cspr is %#x\n", cpsr);
-		printf("  Slot Command Servicing State: %s\n", slot_state[cpsr & 0x3]);
-		printf("  Bad Message Integrity Check: %s\n", (cpsr & (1 << 4)) ? "Yes" : "No");
-		printf("  Timeout Waiting for a Packet: %s\n", (cpsr & (1 << 5)) ? "Yes" : "No");
-		printf("  Unsupported Transmission Unit: %s\n", (cpsr & (1 << 6)) ? "Yes" : "No");
-		printf("  Bad Header Version: %s\n", (cpsr & (1 << 7)) ? "Yes" : "No");
-		printf("  Unknown Destination ID: %s\n", (cpsr & (1 << 8)) ? "Yes" : "No");
-		printf("  Incorrect Transmission Unit: %s\n", (cpsr & (1 << 9)) ? "Yes" : "No");
-		printf("  Unexpected Middle or End of Packet: %s\n", (cpsr & (1 << 10)) ? "Yes" : "No");
-		printf("  Out-of-Sequence Packet Sequence Number: %s\n", (cpsr & (1 << 11)) ? "Yes" : "No");
-		printf("  Bad, Unexpected, or Expired Message Tag: %s\n", (cpsr & (1 << 12)) ? "Yes" : "No");
-		printf("  Bad Packet or Other Physical Layer: %s\n", (cpsr & (1 << 13)) ? "Yes" : "No");
-		printf("  NVM Subsystem Reset Occurred: %s\n", (cpsr & (1 << 14)) ? "Yes" : "No");
-		printf("  Pause Flag: %s\n", (cpsr & (1 << 15)) ? "Yes" : "No");
+		printf(" cspr: %#x\n", cpsr);
+		printf(" SSTA: %s\n", slot_state[cpsr & 0x3]);
+		printf(" CMNICS: %s\n", (cpsr & (1 << 4)) ? "Yes" : "No");
+		printf(" BMICE: %s\n", (cpsr & (1 << 5)) ? "Yes" : "No");
+		printf(" UTUNT: %s\n", (cpsr & (1 << 6)) ? "Yes" : "No");
+		printf(" BHVS: %s\n", (cpsr & (1 << 7)) ? "Yes" : "No");
+		printf(" UDSTID: %s\n", (cpsr & (1 << 8)) ? "Yes" : "No");
+		printf(" ITU: %s\n", (cpsr & (1 << 9)) ? "Yes" : "No");
+		printf(" UMEP: %s\n", (cpsr & (1 << 10)) ? "Yes" : "No");
+		printf(" OSPSN: %s\n", (cpsr & (1 << 11)) ? "Yes" : "No");
+		printf(" BUEMT: %s\n", (cpsr & (1 << 12)) ? "Yes" : "No");
+		printf(" BPOPL: %s\n", (cpsr & (1 << 13)) ? "Yes" : "No");
+		printf(" NSSRO: %s\n", (cpsr & (1 << 14)) ? "Yes" : "No");
+		printf(" PFLG: %s\n", (cpsr & (1 << 15)) ? "Yes" : "No");
 		break;
 	case nvme_mi_control_opcode_replay:
-		printf(" Replay : cspr is %#x\n", cpsr);
+		printf(" REP: %#x\n", cpsr);
 		break;
 	default:
 		/* unreachable */
@@ -896,3 +1075,910 @@ static int ctrl_primitive(int argc, char **argv, struct command *cmd, struct plu
 	return err;
 }
 
+static int set_health_status_change(int argc, char **argv, struct command *cmd, struct plugin *plugin)
+{
+	const char *desc =(
+		"Send a Configuration set NVMe-MI command to clear selected status bits in the Composite Controller Status Flags field.\n");
+
+	const char *rdy = "Ready (bit 0)";
+    const char *cfs = "Controller Fatal Status (bit 1)";
+    const char *shst = "Shutdown Status (bit 2)";
+    const char *nssro = "NVM Subsystem Reset Occurred (bit 3)";
+    const char *ceco = "Controller Enable Change Occurred (bit 4)";
+    const char *nac = "Namespace Attribute Changed (bit 5)";
+    const char *fa = "Firmware Activated (bit 6)";
+    const char *cschng = "Controller Status Change (bit 7)";
+    const char *ctemp = "Composite Temperature (bit 8)";
+    const char *pdlu = "Percentage Used (bit 9)";
+    const char *spare = "Available Spare (bit 10)";
+    const char *cwarn = "Critical Warning (bit 11)";
+    const char *tcida = "Telemetry Controller-Initiated Data Available (bit 12)";
+	
+	_cleanup_nvme_dev_ struct nvme_dev *dev = NULL;
+	__u32 result;
+	struct timeval start_time, end_time;
+	int status = 0, err = 0;
+	uint8_t cid = 2, csi = 0;
+	size_t len = 4096;
+
+	struct health_status_change cfg ={
+		.rdy = 0,
+		.cfs = 0,
+		.shst = 0,
+		.nssro = 0,
+		.ceco = 0,
+		.nac = 0,
+		.fa = 0,	
+		.cschng = 0,
+		.ctemp = 0,
+		.pdlu = 0,
+		.spare = 0,
+		.cwarn = 0,
+		.tcida = 0,
+		.reserved = 0,
+	};
+
+
+	OPT_ARGS(opts) = {
+	  	OPT_FLAG("rdy", 'r', &cfg.rdy, rdy),
+	  	OPT_FLAG("cfs", 'c', &cfg.cfs, cfs),
+	  	OPT_FLAG("shst", 's',&cfg.shst, shst),
+	  	OPT_FLAG("nssro", 'n', &cfg.nssro, nssro),
+	  	OPT_FLAG("ceco", 'e', &cfg.ceco, ceco),
+	  	OPT_FLAG("nac", 'a', &cfg.nac, nac),
+		OPT_FLAG("fa", 'f', &cfg.fa, fa),
+		OPT_FLAG("cschng", 'h', &cfg.cschng, cschng),
+		OPT_FLAG("ctemp", 't', &cfg.ctemp, ctemp),
+		OPT_FLAG("pdlu", 'p', &cfg.pdlu, pdlu),
+		OPT_FLAG("spare", 'z', &cfg.spare, spare),
+		OPT_FLAG("cwarn", 'w', &cfg.cwarn, cwarn),
+		OPT_FLAG("tcida", 'i', &cfg.tcida, tcida),
+	  	OPT_END()
+	};
+
+	
+	err = parse_and_open(&dev, argc, argv, desc, opts);
+	if (err)
+		return err;
+
+	gettimeofday(&start_time, NULL);
+	struct {
+		struct nvme_mi_mi_resp_hdr resp_hdr;
+		uint8_t resp_buf[4096];
+	} resp = { 0 };
+
+	struct nvme_mi_mi_req_hdr req_hdr = {0};
+
+	//Opcode for Configuration set
+	req_hdr.opcode = 3;
+
+	//store cid, retry delay and delay field
+	req_hdr.cdw0 = ((uint32_t)cid);
+
+	// Create a uint32 to store all the flag variables
+	uint32_t flag_data = 0;
+
+	// Pack all the flag bits into the uint32
+	flag_data |= cfg.rdy ? 1 : 0;
+	flag_data |= (cfg.cfs ? 1 : 0) << 1;
+	flag_data |= (cfg.shst ? 1 : 0) << 2;
+	flag_data |= (cfg.nssro ? 1 : 0) << 3;
+	flag_data |= (cfg.ceco ? 1 : 0) << 4;
+	flag_data |= (cfg.nac ? 1 : 0) << 5;
+	flag_data |= (cfg.fa ? 1 : 0) << 6;
+	flag_data |= (cfg.cschng ? 1 : 0) << 7;
+	flag_data |= (cfg.ctemp ? 1 : 0) << 8;
+	flag_data |= (cfg.pdlu ? 1 : 0) << 9;
+	flag_data |= (cfg.spare ? 1 : 0) << 10;
+	flag_data |= (cfg.cwarn ? 1 : 0) << 11;
+	flag_data |= (cfg.tcida ? 1 : 0) << 12;
+	// Bits 13-31 are reserved, so we leave them as 0
+
+	req_hdr.cdw1 = flag_data;
+
+	int rc = 0;
+	//Send the message 
+	rc = nvme_mi_mi_xfer(dev->mi.ep, &req_hdr, 0, &resp.resp_hdr, &len, csi);
+	assert(rc == 0);
+
+	if (resp.resp_hdr.status) {
+		int status = parse_mi_resp_status(resp.resp_hdr.status, resp.resp_buf);
+		if (status != 1) return -1;
+	}
+
+gettimeofday(&end_time, NULL);
+
+return err;
+	
+}
+
+/**  
+ * Helper function to interpret composite temperature value  
+ * Returns the temperature in degrees Celsius.  
+ * Returns INT_MIN for special values like data too old or sensor failure  
+ */  
+int interpret_composite_temperature(uint8_t temp_value) {  
+    if (temp_value <= 0x7E) {  
+        /* 0-126°C */  
+        return (int)temp_value;  
+    } else if (temp_value == 0x7F) {  
+        /* ≥ 127°C */  
+        return 127;  
+    } else if (temp_value == 0x80) {  
+        /* Temperature data is greater than 5s old */  
+        return INT_MIN;  
+    } else if (temp_value == 0x81) {  
+        /* Temperature data not accurate due to sensor failure */  
+        return INT_MIN;  
+    } else if (temp_value >= 0x82 && temp_value <= 0xC3) {  
+        /* Reserved */  
+        return INT_MIN;  
+    } else if (temp_value == 0xC4) {  
+        /* ≤ -60°C */  
+        return -60;  
+    } else {  
+        /* -59°C to -1°C (two's complement) */  
+        /* Convert from two's complement */  
+        return (int)((int8_t)temp_value);  
+    }  
+}
+
+/**  
+ * Helper function to print the NVM Subsystem Health Data Structure  
+ */  
+void print_nvm_subsystem_health(const nvm_subsystem_health_data_structure_t *health) {  
+    printf("NVM Subsystem Health Data Structure:\n");  
+      
+    printf("    NVM Subsystem Status: 0x%02X\n", health->nvm_subsystem_status.raw);  
+    printf("    AEM Transmission Failure: %d\n", health->nvm_subsystem_status.bits.aem_transmission_failure);  
+    printf("    Sanitize Failure Mode: %d\n", health->nvm_subsystem_status.bits.sanitize_failure_mode);  
+    printf("    Drive Functional: %d\n", health->nvm_subsystem_status.bits.drive_functional);  
+    printf("    Reset Not Required: %d\n", health->nvm_subsystem_status.bits.reset_not_required);  
+    printf("    Port 0 PCIe Link Active: %d\n", health->nvm_subsystem_status.bits.port0_pcie_link_active);  
+    printf("    Port 1 PCIe Link Active: %d\n", health->nvm_subsystem_status.bits.port1_pcie_link_active);  
+      
+    printf("  SMART Warnings: 0x%02X\n", health->smart_warnings);  
+    printf("  Composite Temperature: 0x%02X", health->composite_temperature);  
+    int temp = interpret_composite_temperature(health->composite_temperature);  
+    if (temp != INT_MIN) {  
+        printf(" (%d°C)\n", temp);  
+    } else if (health->composite_temperature == 0x80) {  
+        printf(" (Data > 5s old)\n");  
+    } else if (health->composite_temperature == 0x81) {  
+        printf(" (Sensor failure)\n");  
+    } else {  
+        printf(" (Special value)\n");  
+    }  
+      
+    printf("  Percentage Drive Life Used: %d%%\n", health->percentage_drive_life_used);  
+	//printf("  Composite Controller Status: 0x%04X\n", *(uint16_t *)health->ccs);  
+	printf("    Ready (RDY): %d\n", health->flags.bits.ready);  
+	printf("    Controller Fatal Status (CFS): %d\n", health->flags.bits.controller_fatal_status);  
+	printf("    Shutdown Status (SHST): %d\n", health->flags.bits.shutdown_status);  
+	printf("    NVM Subsystem Reset Occurred (NSSRO): %d\n", health->flags.bits.nvm_subsystem_reset_occurred);  
+	printf("    Controller Enable Change Occurred (CECO): %d\n", health->flags.bits.controller_enable_change_occurred);  
+	printf("    Namespace Attribute Changed (NAC): %d\n", health->flags.bits.namespace_attribute_changed);  
+	printf("    Firmware Activated (FA): %d\n", health->flags.bits.firmware_activated);  
+	printf("    Controller Status Change (CSCHNG): %d\n", health->flags.bits.controller_status_change);  
+	printf("    Composite Temperature (CTEMP): %d\n", health->flags.bits.composite_temperature_change);  
+	printf("    Percentage Used (PDLU): %d\n", health->flags.bits.percentage_used);  
+	printf("    Available Spare (SPARE): %d\n", health->flags.bits.available_spare);  
+	printf("    Critical Warning (CWARN): %d\n", health->flags.bits.critical_warning);  
+	printf("    Telemetry Controller-Initiated Data Available (TCIDA): %d\n", health->flags.bits.telemetry_controller_initiated_data_available);  
+} 
+
+static int nvm_ss_hlth_stat_poll(int argc, char **argv, struct command *cmd, struct plugin *plugin)
+{
+	const char *desc =(
+		"Send a NVM Subsystem Health Status Poll change\n");
+
+	const char *cs = "Clear Status (bit 31)";
+    
+	_cleanup_nvme_dev_ struct nvme_dev *dev = NULL;
+	__u32 result;
+	struct timeval start_time, end_time;
+	int status = 0, err = 0;
+	uint8_t csi = 0;
+	size_t len = 4096;
+
+	struct nvm_ss_hlth_stat_poll {
+		uint32_t rsvd;
+		__u8 cs;
+	};
+
+	struct nvm_ss_hlth_stat_poll cfg = {
+		.rsvd = 0,
+		.cs = 0,
+	};
+	struct {
+		struct nvme_mi_mi_resp_hdr resp_hdr;
+		char resp_buf[4096];
+	} resp = { 0 };
+
+	struct nvme_mi_mi_req_hdr req_hdr = {0};
+
+	OPT_ARGS(opts) = {
+	  	OPT_UINT("cs", 'c', &cfg.cs, cs),
+	  	OPT_END()
+	};
+
+	err = parse_and_open(&dev, argc, argv, desc, opts);
+	if (err)
+		return err;
+
+	gettimeofday(&start_time, NULL);
+	
+	//Opcode for NVM Subsystem Health Status Poll
+	req_hdr.opcode = 1;
+	if (cfg.cs) {
+		req_hdr.cdw1 = (1 << 31);
+	}
+	printf("cdw1 field value is: %06x\n",req_hdr.cdw1);
+
+	int rc = 0;	
+	//Send the message 
+	rc = nvme_mi_mi_xfer(dev->mi.ep, &req_hdr, 0, &resp.resp_hdr, &len, csi);
+	assert(rc == 0);
+
+	if (resp.resp_hdr.status) {
+		int status = parse_mi_resp_status(resp.resp_hdr.status, resp.resp_hdr.nmresp);
+		if (status != 1) return -1;
+	} else {
+		nvm_subsystem_health_data_structure_t *nshds = (nvm_subsystem_health_data_structure_t *)resp.resp_buf;
+		// Print the NVM Subsystem Health Data Structure
+		print_nvm_subsystem_health(nshds);
+
+	}
+
+	gettimeofday(&end_time, NULL);
+
+	return err;
+}
+
+/**  
+ * Controller Health Status Changed Flags (CHSCF)  
+ * As defined in the NVMe Management Interface Specification, Revision 2.0  
+ */  
+#if 0
+typedef struct {  
+    union {  
+        uint16_t raw;  
+        struct {  
+            uint16_t ready : 1;                              // Bit 0: Ready (RDY)  
+            uint16_t controller_fatal_status : 1;            // Bit 1: Controller Fatal Status (CFS)  
+            uint16_t shutdown_status : 1;                    // Bit 2: Shutdown Status (SHST)  
+            uint16_t reserved2 : 1;                          // Bit 3: Reserved  
+            uint16_t nvm_subsystem_reset_occurred : 1;       // Bit 4: NVM Subsystem Reset Occurred (NSSRO)  
+            uint16_t controller_enable_change_occurred : 1;  // Bit 5: Controller Enable Change Occurred (CECO)  
+            uint16_t namespace_attribute_changed : 1;        // Bit 6: Namespace Attribute Changed (NAC)  
+            uint16_t firmware_activated : 1;                 // Bit 7: Firmware Activated (FA)  
+            uint16_t controller_status_change : 1;           // Bit 8: Controller Status Change (CSTS)  
+            uint16_t composite_temperature_change : 1;       // Bit 9: Composite Temperature Change (CTEMP)  
+            uint16_t percentage_used : 1;                    // Bit 10: Percentage Used (PDLU)  
+            uint16_t available_spare : 1;                    // Bit 11: Available Spare (SPARE)  
+            uint16_t critical_warning : 1;                   // Bit 12: Critical Warning (CWARN)  
+            uint16_t telemetry_controller_initiated_data_available : 1; // Bit 13: TCIDA  
+            uint16_t reserved1 : 2;                         // Bits 14-15: Reserved  
+        } bits;  
+    } flags;  
+} controller_health_status_changed_flags_t;
+#endif
+/**  
+ * Controller Health Data Structure (CHDS)  
+ * As defined in the NVMe Management Interface Specification, Revision 2.0  
+ */  
+typedef struct {  
+    // Bytes 0-1: Controller Identifier (CTLID)  
+    uint16_t controller_identifier;  
+  
+    // Bytes 2-3: Controller Status (CSTS)  
+    union {  
+        uint16_t raw;  
+        struct {
+			uint8_t ready : 1;
+			uint8_t controller_fatal_status : 1; // Bit 1: Controller Fatal Status (CFS)
+            uint8_t shutdown_status : 2;             // Bits 2-3: Shutdown Status (SHST)  
+            uint8_t nvm_subsystem_reset_occurred : 1;// Bit 4: NVM Subsystem Reset Occurred (NSSRO)  
+            uint8_t controller_enable_change_occurred : 1; // Bit 5: Controller Enable Change Occurred (CECO)  
+            uint8_t namespace_attribute_changed : 1;  // Bit 6: Namespace Attribute Changed (NAC)  
+            uint8_t firmware_activated : 1;          // Bit 7: Firmware Activated (FA)  
+            uint8_t telemetry_controller_initiated_data_available : 1; // Bit 8: TCIDA  
+            uint8_t reserved1 : 7;                   // Bits 9-15: Reserved  
+        } bits;  
+    } controller_status;  
+  
+    // Bytes 4-5: Composite Temperature (CTEMP) in Kelvins  
+    uint16_t composite_temperature;  
+  
+    // Byte 6: Percentage Used (PDLU)  
+    uint8_t percentage_used;  
+  
+    // Byte 7: Available Spare (SPARE) - Normalized percentage (0%-100%)  
+    uint8_t available_spare;  
+  
+    // Byte 8: Critical Warning (CWARN)  
+    union {  
+        uint8_t raw;  
+        struct {  
+            uint8_t spare_threshold : 1;                     // Bit 0: Spare Threshold (ST)  
+            uint8_t temperature_above_or_under_threshold : 1;// Bit 1: Temperature Above or Under Threshold (TAUT)  
+            uint8_t reliability_degraded : 1;                // Bit 2: Reliability Degraded (RD)  
+            uint8_t read_only : 1;                           // Bit 3: Read Only (RO)  
+            uint8_t volatile_memory_backup_failed : 1;       // Bit 4: Volatile Memory Backup Failed (VMBF)  
+            uint8_t persistent_memory_region_error : 1;      // Bit 5: Persistent Memory Region Error (PMRE)  
+            uint8_t reserved2 : 2;                           // Bits 6-7: Reserved  
+        } bits;  
+    } critical_warning;  
+  
+    // Bytes 9-10: Controller Health Status Changed (CHSC)
+    union {
+        uint8_t raw[2];
+        struct {
+            uint16_t ready : 1;                              // Bit 0: Ready (RDY)
+            uint16_t controller_fatal_status : 1;            // Bit 1: Controller Fatal Status (CFS)
+            uint16_t shutdown_status : 1;                    // Bit 2: Shutdown Status (SHST)
+            uint16_t reserved2 : 1;                          // Bit 3: Reserved
+            uint16_t nvm_subsystem_reset_occurred : 1;       // Bit 4: NVM Subsystem Reset Occurred (NSSRO)
+            uint16_t controller_enable_change_occurred : 1;  // Bit 5: Controller Enable Change Occurred (CECO)
+            uint16_t namespace_attribute_changed : 1;        // Bit 6: Namespace Attribute Changed (NAC)
+            uint16_t firmware_activated : 1;                 // Bit 7: Firmware Activated (FA)
+            uint16_t controller_status_change : 1;           // Bit 8: Controller Status Change (CSTS)
+            uint16_t composite_temperature_change : 1;       // Bit 9: Composite Temperature Change (CTEMP)
+            uint16_t percentage_used : 1;                    // Bit 10: Percentage Used (PDLU)
+            uint16_t available_spare : 1;                    // Bit 11: Available Spare (SPARE)
+            uint16_t critical_warning : 1;                   // Bit 12: Critical Warning (CWARN)
+            uint16_t telemetry_controller_initiated_data_available : 1; // Bit 13: TCIDA
+            uint16_t reserved1 : 2;                         // Bits 14-15: Reserved
+        } bits;
+    } flags;
+
+	//controller_health_status_changed_flags_t controller_health_status_changed;
+  
+    // Bytes 11-15: Reserved  
+    uint8_t reserved3[5];  
+  
+}  __attribute__((packed)) controller_health_data_structure_t;  
+  
+/**  
+ * Helper function to display the contents of the Controller Health Data Structure  
+ */  
+void print_controller_health_data(const controller_health_data_structure_t *chds) {  
+    printf("Controller Health Data Structure:\n");  
+  
+    printf("  Controller Identifier: 0x%04X\n", chds->controller_identifier);  
+    printf("  Controller Status: 0x%04X\n", chds->controller_status.raw);  
+    printf("  Ready: %d\n", chds->controller_status.bits.ready);
+    printf("  Controller Fatal Status: %d\n", chds->controller_status.bits.controller_fatal_status);
+    printf("    Shutdown Status: %d\n", chds->controller_status.bits.shutdown_status);  
+    printf("    NVM Subsystem Reset Occurred: %d\n", chds->controller_status.bits.nvm_subsystem_reset_occurred);  
+    printf("    Controller Enable Change Occurred: %d\n", chds->controller_status.bits.controller_enable_change_occurred);  
+    printf("    Namespace Attribute Changed: %d\n", chds->controller_status.bits.namespace_attribute_changed);  
+    printf("    Firmware Activated: %d\n", chds->controller_status.bits.firmware_activated);  
+    printf("    Telemetry Controller-Initiated Data Available: %d\n", chds->controller_status.bits.telemetry_controller_initiated_data_available);  
+  
+    printf("  Composite Temperature: %d Kelvins\n", chds->composite_temperature);  
+    printf("  Percentage Used: %d%%\n", chds->percentage_used);  
+    printf("  Available Spare: %d%%\n", chds->available_spare);  
+      
+    printf("  Critical Warning: 0x%02X\n", chds->critical_warning.raw);  
+    printf("    Spare Threshold: %d\n", chds->critical_warning.bits.spare_threshold);  
+    printf("    Temperature Above or Under Threshold: %d\n", chds->critical_warning.bits.temperature_above_or_under_threshold);  
+    printf("    Reliability Degraded: %d\n", chds->critical_warning.bits.reliability_degraded);  
+    printf("    Read Only: %d\n", chds->critical_warning.bits.read_only);  
+    printf("    Volatile Memory Backup Failed: %d\n", chds->critical_warning.bits.volatile_memory_backup_failed);  
+    printf("    Persistent Memory Region Error: %d\n", chds->critical_warning.bits.persistent_memory_region_error);  
+  
+	printf("  Controller Health Status Changed:\n");
+	printf("    Ready (RDY): %d\n", chds->flags.bits.ready);
+	printf("    Controller Fatal Status (CFS): %d\n", chds->flags.bits.controller_fatal_status);
+	printf("    Shutdown Status (SHST): %d\n", chds->flags.bits.shutdown_status);
+	printf("    NVM Subsystem Reset Occurred (NSSRO): %d\n", chds->flags.bits.nvm_subsystem_reset_occurred);
+	printf("    Controller Enable Change Occurred (CECO): %d\n", chds->flags.bits.controller_enable_change_occurred);
+	printf("    Namespace Attribute Changed (NAC): %d\n", chds->flags.bits.namespace_attribute_changed);
+	printf("    Firmware Activated (FA): %d\n", chds->flags.bits.firmware_activated);
+	printf("    Controller Status Change (CSTS): %d\n", chds->flags.bits.controller_status_change);
+	printf("    Composite Temperature Change (CTEMP): %d\n", chds->flags.bits.composite_temperature_change);
+	printf("    Percentage Used (PDLU): %d\n", chds->flags.bits.percentage_used);
+	printf("    Available Spare (SPARE): %d\n", chds->flags.bits.available_spare);
+	printf("    Critical Warning (CWARN): %d\n", chds->flags.bits.critical_warning);
+	printf("    Telemetry Controller-Initiated Data Available (TCIDA): %d\n", chds->flags.bits.telemetry_controller_initiated_data_available);
+}
+
+static int ctrlr_hlth_stat_poll(int argc, char **argv, struct command *cmd, struct plugin *plugin)
+{
+	const char *desc =(
+		"Send a Controller Health Status Poll command determine changes in health status\n"); 
+
+	const char *starting_controller_id = "Starting Controller ID (SCTCTL)";
+	const char *maximum_response_entries = "Maximum Response Entries (MAXRENT)";
+	const char *include_pci_functions = "Include PCI Functions (INCF)";
+	const char *include_sr_iov_physical_functions = "Include SR-IOV Physical Functions (INCPFI)";
+	const char *include_sr_iov_virtual_functions = "Include SR-IOV Virtual Functions (INCVI)";
+	const char *report_all = "Report All (ALL)";
+	const char *controller_status_changes = "Controller Status Changes (CSTS)";
+	const char *composite_temperature_changes = "Composite Temperature Changes (CTEMP)";
+	const char *percentage_used = "Percentage Used (PDLU)";
+	const char *available_spare = "Available Spare (SPARE)";  
+	const char *critical_warning = "Critical Warning (CWARN)";
+	const char *clear_changed_flags = "Clear Changed Flags (CCF)";
+    
+	_cleanup_nvme_dev_ struct nvme_dev *dev = NULL;
+	__u32 result;
+	struct timeval start_time, end_time;
+	int status = 0, err = 0;
+	uint8_t cid = 2, csi = 0;
+	size_t len = 4096;
+
+	struct controller_health_status_poll_dwd0 cfg0= {
+		.starting_controller_id = 0,
+		.maximum_response_entries = 0,
+		.include_pci_functions = 0,
+		.include_sr_iov_physical_functions = 0,
+		.include_sr_iov_virtual_functions = 0,
+		.report_all = 0,
+	};
+
+	struct controller_health_status_poll_dwd1 cfg1 = {
+    		.controller_status_changes = 0,
+	    	.composite_temperature_changes = 0,
+	    	.percentage_used = 0,
+	    	.available_spare = 0,
+	    	.critical_warning = 0,
+	    	.reserved = 0,
+	    	.clear_changed_flags = 0,
+	};
+	
+	struct {
+		struct nvme_mi_mi_resp_hdr resp_hdr;
+		uint8_t resp_buf[4096];
+	} resp = { 0 };
+
+	struct nvme_mi_mi_req_hdr req_hdr = {0};
+
+	OPT_ARGS(opts) = {
+	  	OPT_UINT("sctctl", 's', &cfg0.starting_controller_id, starting_controller_id),
+		OPT_UINT("maxrent", 'm', &cfg0.maximum_response_entries, maximum_response_entries),
+		OPT_UINT("incf", 'f', &cfg0.include_pci_functions, include_pci_functions),
+		OPT_UINT("incpfi", 'n', &cfg0.include_sr_iov_physical_functions, include_sr_iov_physical_functions),
+		OPT_UINT("incvi", 'i', &cfg0.include_sr_iov_virtual_functions, include_sr_iov_virtual_functions),
+		OPT_UINT("all", 'a', &cfg0.report_all, report_all),
+		OPT_UINT("csts", 'c', &cfg1.controller_status_changes, controller_status_changes),
+		OPT_UINT("ctemp", 't', &cfg1.composite_temperature_changes, composite_temperature_changes),
+		OPT_UINT("pdlu", 'p', &cfg1.percentage_used, percentage_used),
+		OPT_UINT("spare", 'e', &cfg1.available_spare, available_spare),
+		OPT_UINT("cwarn", 'w', &cfg1.critical_warning, critical_warning),
+		OPT_UINT("ccf", 'z', &cfg1.clear_changed_flags, clear_changed_flags),
+	  	OPT_END()
+	};
+
+	err = parse_and_open(&dev, argc, argv, desc, opts);
+	if (err)
+		return err;
+	uint32_t raw = 0, raw1 = 0;
+	raw |= ((uint32_t)cfg0.starting_controller_id & 0xFFFF);           // bits 0-15
+	raw |= ((uint32_t)cfg0.maximum_response_entries & 0xFF) << 16;     // bits 16-23
+	raw |= ((uint32_t)cfg0.include_pci_functions & 0x1) << 24;         // bit 24
+	raw |= ((uint32_t)cfg0.include_sr_iov_physical_functions & 0x1) << 25; // bit 25
+	raw |= ((uint32_t)cfg0.include_sr_iov_virtual_functions & 0x1) << 26;  // bit 26
+	raw |= ((uint32_t)cfg0.report_all & 0x1) << 31;                    // bit 31
+									   //
+
+	raw1 |= (cfg1.controller_status_changes & 0x1);           // bit 0
+	raw1 |= (cfg1.composite_temperature_changes & 0x1) << 1;  // bit 1
+	raw1 |= (cfg1.percentage_used & 0x1) << 2;                // bit 2
+	raw1 |= (cfg1.available_spare & 0x1) << 3;                // bit 3
+	raw1 |= (cfg1.critical_warning & 0x1) << 4;               // bit 4
+	// bits 5-30 are reserved, leave as 0 or set if needed
+	raw1 |= (cfg1.clear_changed_flags & 0x1) << 31;           // bit 31
+								  //
+	gettimeofday(&start_time, NULL);
+	
+	//Opcode for Controller Health Status Poll
+	req_hdr.opcode = 2;
+	req_hdr.cdw0 = raw;
+	req_hdr.cdw1 = raw1;
+	
+	int rc = 0;	
+	//Send the message 
+	rc = nvme_mi_mi_xfer(dev->mi.ep, &req_hdr, 0, &resp.resp_hdr, &len, csi);
+	assert(rc == 0);
+
+	if (resp.resp_hdr.status) {
+		int status = parse_mi_resp_status(resp.resp_hdr.status, resp.resp_hdr.nmresp);
+		if (status != 1) return -1;
+	} else {
+		//Number of entries in the response buffer
+		uint8_t num_entries = resp.resp_hdr.nmresp[2];
+		printf("Number of entries in the response buffer (RENT): %d\n", num_entries);
+
+		// Map resp.resp_buf to controller_health_data_structure_t
+		printf("SIZE of CH Data Structure %d\n", sizeof(controller_health_data_structure_t));
+		controller_health_data_structure_t *chds = (controller_health_data_structure_t *)resp.resp_buf;
+
+		for (int i = 0; i < num_entries; i++) {
+			print_controller_health_data(chds);
+			chds = (controller_health_data_structure_t *)((uint8_t *)chds + 16);
+		}
+	}
+
+	gettimeofday(&end_time, NULL);
+
+	return err;
+}
+#if 0
+struct nvme_mi_transport_mctp_async {
+    int net;
+    __u8 eid;
+    int sd;
+    void *resp_buf;
+    size_t resp_buf_size;
+    pthread_t poll_thread;
+    bool stop_polling;
+};
+
+static void *poll_socket(void *arg) {
+    struct nvme_mi_transport_mctp_async *mctp = (struct nvme_mi_transport_mctp_async *)arg;
+    struct pollfd pollfds[1];
+    struct msghdr resp_msg;
+    struct iovec resp_iov[1];
+    ssize_t len;
+
+    pollfds[0].fd = mctp->sd;
+    pollfds[0].events = POLLIN;
+
+    while (!mctp->stop_polling) {
+        int rc = poll(pollfds, 1, 1000); // Poll with a timeout of 60 seconds
+        if (rc < 0) {
+            if (errno == EINTR)
+                continue;
+            nvme_msg(NULL, LOG_ERR, "Polling error: %m\n");
+            break;
+        }
+
+        if (rc == 0) // Timeout
+            continue;
+
+        if (pollfds[0].revents & POLLIN) {
+            memset(&resp_msg, 0, sizeof(resp_msg));
+            resp_iov[0].iov_base = mctp->resp_buf;
+            resp_iov[0].iov_len = mctp->resp_buf_size;
+            resp_msg.msg_iov = resp_iov;
+            resp_msg.msg_iovlen = 1;
+
+            len = recvmsg(mctp->sd, &resp_msg, MSG_DONTWAIT);
+            if (len < 0) {
+                nvme_msg(NULL, LOG_ERR, "Error receiving message: %m\n");
+                continue;
+            }
+
+            nvme_msg(NULL, LOG_INFO, "Received message of length %zd\n", len);
+			printf("Received message: ");
+			for (size_t i = 0; i < len; i++) {
+				printf("%02x ", ((unsigned char *)mctp->resp_buf)[i]);
+			}
+			printf("\n");
+            // Process the message here
+        }
+    }
+
+    return NULL;
+}
+static int create_mctp_listener_thread(int net, __u8 eid, size_t resp_buf_size, struct nvme_mi_transport_mctp_async *mctp)
+ {
+	if (!mctp) {
+		fprintf(stderr, "Error: Failed to allocate memory for MCTP transport.\n");
+		return -1;
+	}
+
+	mctp->net = net;
+	mctp->eid = eid;
+	mctp->resp_buf_size = resp_buf_size;
+	mctp->resp_buf = malloc(resp_buf_size);
+	if (!mctp->resp_buf) {
+		fprintf(stderr, "Error: Failed to allocate memory for response buffer.\n");
+		free(mctp);
+		return -1;
+	}
+
+	mctp->sd = socket(AF_MCTP, SOCK_DGRAM, 0);
+	if (mctp->sd < 0) {
+		fprintf(stderr, "Error: Failed to create MCTP socket: %m\n");
+		free(mctp->resp_buf);
+		free(mctp);
+		return -1;
+	}
+
+	struct sockaddr_mctp addr = {
+		.smctp_family = AF_MCTP,
+		.smctp_network = net,
+		.smctp_eid = eid,
+	};
+
+	if (bind(mctp->sd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+		fprintf(stderr, "Error: Failed to bind MCTP socket: %m\n");
+		close(mctp->sd);
+		free(mctp->resp_buf);
+		free(mctp);
+		return -1;
+	}
+
+	mctp->stop_polling = false;
+
+	if (pthread_create(&mctp->poll_thread, NULL, poll_socket, mctp) != 0) {
+		fprintf(stderr, "Error: Failed to create polling thread.\n");
+		close(mctp->sd);
+		free(mctp->resp_buf);
+		free(mctp);
+		return -1;
+	}
+
+	printf("MCTP listener thread created successfully.\n");
+	return 0;
+}
+
+static void stop_mctp_listener_thread(struct nvme_mi_transport_mctp_async *mctp) {
+	if (!mctp) {
+		fprintf(stderr, "Error: MCTP transport is NULL.\n");
+		return;
+	}
+
+	mctp->stop_polling = true;
+
+	if (pthread_join(mctp->poll_thread, NULL) != 0) {
+		fprintf(stderr, "Error: Failed to join polling thread.\n");
+	} else {
+		printf("MCTP listener thread stopped successfully.\n");
+	}
+
+	close(mctp->sd);
+	free(mctp->resp_buf);
+	free(mctp);
+}
+
+static int admin_cmd(int argc, char **argv, struct command *cmd, struct plugin *plugin) {
+    const char *opcode = "opcode (required)";
+	const char *cflags = "command flags";
+	const char *rsvd = "value for reserved field";
+	const char *data_len = "data I/O length (bytes)";
+	const char *metadata_len = "metadata seg. length (bytes)";
+	const char *metadata = "metadata input or output file";
+	const char *cdw2 = "command dword 2 value";
+	const char *cdw3 = "command dword 3 value";
+	const char *cdw10 = "command dword 10 value";
+	const char *cdw11 = "command dword 11 value";
+	const char *cdw12 = "command dword 12 value";
+	const char *cdw13 = "command dword 13 value";
+	const char *cdw14 = "command dword 14 value";
+	const char *cdw15 = "command dword 15 value";
+	const char *input = "data input or output file";
+	const char *show = "print command before sending";
+	const char *re = "set dataflow direction to receive";
+	const char *wr = "set dataflow direction to send";
+	const char *prefill = "prefill buffers with known byte-value, default 0";
+	const char *csi = "Command slot identifier";
+	const char *doff = "Data offset";
+	const char *timeout = "Timeout in milliseconds";
+	const char *flood = "Flood command";
+	const char *namespace_desired = "desired namespace";
+	const char *raw_dump = "dump output in binary format";
+	const char *latency = "output latency statistics";
+	const char *dry = "show command instead of sending";
+
+	_cleanup_huge_ struct nvme_mem_huge mh = { 0, };
+	_cleanup_nvme_dev_ struct nvme_dev *dev = NULL;
+	_cleanup_fd_ int dfd = -1, mfd = -1;
+	int flags;
+	int mode = 0644;
+	void *data = NULL;
+	_cleanup_free_ void *mdata = NULL;
+	int err = 0;
+	__u32 result;
+	const char *cmd_name = NULL;
+	struct timeval start_time, end_time;
+	nvme_print_flags_t flags_t;
+	struct nvme_mi_transport_mctp_async *mctp = malloc(sizeof(struct nvme_mi_transport_mctp_async));
+	if (!mctp) {
+		fprintf(stderr, "Error: Failed to allocate memory for MCTP transport.\n");
+		return -1;
+	}
+
+	struct passthru_config cfg = {
+		.opcode		= 0,
+		.flags		= 0,
+		.prefill	= 0,
+		.rsvd		= 0,
+		.namespace_id	= 0,
+		.data_len	= 0,
+		.metadata_len	= 0,
+		.cdw2		= 0,
+		.cdw3		= 0,
+		.cdw10		= 0,
+		.cdw11		= 0,
+		.cdw12		= 0,
+		.cdw13		= 0,
+		.cdw14		= 0,
+		.cdw15		= 0,
+		.csi 		= 0,
+		.input_file	= "",
+		.metadata	= "",
+		.raw_binary	= false,
+		.show_command	= false,
+		.dry_run	= false,
+		.read		= false,
+		.write		= false,
+		.latency	= false,
+		.offset		= 0,
+		.timeout_ms	= nvme_cfg.timeout,
+		.flood		= false,
+	};
+
+  OPT_ARGS(opts) = {
+		  OPT_BYTE("opcode",       'O', &cfg.opcode,       opcode),
+		  OPT_BYTE("flags",        'f', &cfg.flags,        cflags),
+		  OPT_BYTE("prefill",      'p', &cfg.prefill,      prefill),
+		  OPT_SHRT("rsvd",         'R', &cfg.rsvd,         rsvd),
+		  OPT_UINT("namespace-id", 'n', &cfg.namespace_id, namespace_desired),
+		  OPT_UINT("data-len",     'l', &cfg.data_len,     data_len),
+		  OPT_UINT("metadata-len", 'm', &cfg.metadata_len, metadata_len),
+		  OPT_UINT("cdw2",         '2', &cfg.cdw2,         cdw2),
+		  OPT_UINT("cdw3",         '3', &cfg.cdw3,         cdw3),
+		  OPT_UINT("cdw10",        '4', &cfg.cdw10,        cdw10),
+		  OPT_UINT("cdw11",        '5', &cfg.cdw11,        cdw11),
+		  OPT_UINT("cdw12",        '6', &cfg.cdw12,        cdw12),
+		  OPT_UINT("cdw13",        '7', &cfg.cdw13,        cdw13),
+		  OPT_UINT("cdw14",        '8', &cfg.cdw14,        cdw14),
+		  OPT_UINT("cdw15",        '9', &cfg.cdw15,        cdw15),
+		  OPT_FILE("input-file",   'i', &cfg.input_file,   input),
+		  OPT_FILE("metadata",     'M', &cfg.metadata,     metadata),
+		  OPT_FLAG("raw-binary",   'b', &cfg.raw_binary,   raw_dump),
+		  OPT_FLAG("show-command", 's', &cfg.show_command, show),
+		  OPT_FLAG("dry-run",      'd', &cfg.dry_run,      dry),
+		  OPT_FLAG("read",         'r', &cfg.read,         re),
+		  OPT_FLAG("write",        'w', &cfg.write,        wr),
+		  OPT_FLAG("latency",      'T', &cfg.latency,      latency),
+		  OPT_UINT("csi",          'c', &cfg.csi,          csi),
+		  OPT_UINT("timeout",      't', &cfg.timeout_ms,   timeout),
+          OPT_UINT("doff",         'o', &cfg.offset,       doff),
+		  OPT_FLAG("flood",        'F', &cfg.flood,        flood),
+		  OPT_END()
+  };
+
+	err = parse_and_open(&dev, argc, argv, desc, opts);
+	if (err)
+		return err;
+
+	err = validate_output_format(nvme_cfg.output_format, &flags_t);
+	if (err < 0) {
+		nvme_show_error("Invalid output format");
+		return err;
+	}
+
+	if (cfg.opcode & 0x01) {
+		cfg.write = true;
+		flags = O_RDONLY;
+		dfd = mfd = STDIN_FILENO;
+	}
+
+	if (cfg.opcode & 0x02) {
+		cfg.read = true;
+		flags = O_WRONLY | O_CREAT;
+		dfd = mfd = STDOUT_FILENO;
+	}
+
+	if (strlen(cfg.input_file)) {
+		dfd = open(cfg.input_file, flags, mode);
+		if (dfd < 0) {
+			nvme_show_perror(cfg.input_file);
+			return -EINVAL;
+		}
+	}
+
+	if (cfg.metadata && strlen(cfg.metadata)) {
+		mfd = open(cfg.metadata, flags, mode);
+		if (mfd < 0) {
+			nvme_show_perror(cfg.metadata);
+			return -EINVAL;
+		}
+	}
+
+	if (cfg.metadata_len) {
+		mdata = malloc(cfg.metadata_len);
+		if (!mdata)
+			return -ENOMEM;
+
+		if (cfg.write) {
+			if (read(mfd, mdata, cfg.metadata_len) < 0) {
+				err = -errno;
+				nvme_show_perror("failed to read metadata write buffer");
+				return err;
+			}
+		} else {
+			memset(mdata, cfg.prefill, cfg.metadata_len);
+		}
+	}
+
+	if (cfg.data_len) {
+		data = nvme_alloc_huge(cfg.data_len, &mh);
+		if (!data)
+			return -ENOMEM;
+
+		memset(data, cfg.prefill, cfg.data_len);
+		if (!cfg.read && !cfg.write) {
+			nvme_show_error("data direction not given");
+			return -EINVAL;
+		} else if (cfg.write) {
+			if (read(dfd, data, cfg.data_len) < 0) {
+				err = -errno;
+				nvme_show_error("failed to read write buffer %s", strerror(errno));
+				return err;
+			}
+		}
+	}
+
+	if (cfg.show_command || cfg.dry_run) {
+		printf("opcode       : %02x\n", cfg.opcode);
+		printf("flags        : %02x\n", cfg.flags);
+		printf("rsvd1        : %04x\n", cfg.rsvd);
+		printf("nsid         : %08x\n", cfg.namespace_id);
+		printf("cdw2         : %08x\n", cfg.cdw2);
+		printf("cdw3         : %08x\n", cfg.cdw3);
+		printf("data_len     : %08x\n", cfg.data_len);
+		printf("metadata_len : %08x\n", cfg.metadata_len);
+		printf("addr         : %"PRIx64"\n", (uint64_t)(uintptr_t)data);
+		printf("metadata     : %"PRIx64"\n", (uint64_t)(uintptr_t)mdata);
+		printf("cdw10        : %08x\n", cfg.cdw10);
+		printf("cdw11        : %08x\n", cfg.cdw11);
+		printf("cdw12        : %08x\n", cfg.cdw12);
+		printf("cdw13        : %08x\n", cfg.cdw13);
+		printf("cdw14        : %08x\n", cfg.cdw14);
+		printf("cdw15        : %08x\n", cfg.cdw15);
+		printf("timeout_ms   : %08x\n", cfg.timeout);
+		printf("csi	         : %02x\n", cfg.csi);
+		printf("doff         : %08x\n", cfg.offset);
+	}
+	if (cfg.dry_run)
+		return 0;
+
+	gettimeofday(&start_time, NULL);
+
+	if(!cfg.flood)
+		create_mctp_listener_thread(dev->mi.net, dev->mi.eid, 4096, mctp);
+
+
+	err = nvme_mi_admin_batch_passthru(dev, cfg.opcode, cfg.flags,
+				      cfg.rsvd,
+				      cfg.namespace_id, cfg.cdw2,
+				      cfg.cdw3, cfg.cdw10,
+				      cfg.cdw11, cfg.cdw12, cfg.cdw13,
+				      cfg.cdw14,
+				      cfg.cdw15, cfg.data_len, data,
+				      cfg.metadata_len,
+				      mdata, cfg.timeout, &result,
+					  cfg.csi, cfg.offset);
+
+	gettimeofday(&end_time, NULL);
+	cmd_name = nvme_cmd_to_string(admin, cfg.opcode);
+	if (cfg.latency)
+		printf("%s Command %s latency: %llu us\n", admin ? "Admin" : "IO",
+		       strcmp(cmd_name, "Unknown") ? cmd_name : "Vendor Specific",
+		       elapsed_utime(start_time, end_time));
+
+	if (err < 0) {
+		nvme_show_error("%s: %s", __func__, nvme_strerror(errno));
+	} else if (err) {
+		nvme_show_status(err);
+	} else  {
+		fprintf(stderr, "%s Command %s is Success and result: 0x%08x\n", admin ? "Admin" : "IO",
+			strcmp(cmd_name, "Unknown") ? cmd_name : "Vendor Specific", result);
+		if (cfg.read)
+			passthru_print_read_output(cfg, data, dfd, mdata, mfd, err);
+	}
+
+	if(!cfg.flood)
+		stop_mctp_listener_thread(mctp);
+
+	return err;
+	
+    
+}
+#endif

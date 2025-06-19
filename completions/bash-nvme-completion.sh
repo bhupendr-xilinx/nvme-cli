@@ -250,7 +250,7 @@ nvme_list_opts () {
 			--cdw11= -5 --cdw12= -6 --cdw13= -7 --cdw14= -8 \
 			--cdw15= -9 --input-file= -i --raw-binary -b \
 			--show-command -s --dry-run -d --read -r --write -w \
-			--latency -T --csi= -c --doff= -c"
+			--latency -T --csi= -c --doff= -o --timeout= -t"
 			;;
 		"io-passthru")
 		opts+=" --opcode= -O --flags= -f --prefill= -p --rsvd= -R \
@@ -561,18 +561,37 @@ plugin_amd_opts () {
 	opts+=" "
 
 	case "$1" in
-		"set-ae")
+		"config-ae")
 		opts+=" --aerd= -r --aemd= -d \
 			--numaee= -n --enable_aeid_list= -e \
 			--disable_aeid_list= -D --aeelver= -v \
-			--aeetl= -t --aeelhl= -h"
+			--aeetl= -t --aeelhl= -h --csi= -c"
 			;;
 		"config-get")
-		opts+=" --cid= -c --pid= -p"
+		opts+=" --cid= -c --pid= -p \
+			--csi= -c"
 			;;
 		"ctrl-primitive")
-		opts+=" --action= -a"
+		opts+=" --action= -a --csi= -c --cpsp= -s \
+			--tag= -t"
 			;;
+		"config-hs-change")
+		opts+=" --rdy= -r --cfs= -c --shst= -s \
+			--nssro= -n --ceco= -e --nac= -a \
+			--fa= -f --cschng= -h --ctemp= -t \
+			--pdlu= -p --spare= -z --cwarn= -w \
+			--tcida= -i"
+			;;
+		"nvm-ss-hs-poll")
+                opts+=" --cs= -c"
+                        ;;
+		"ctrlr-hs-poll")
+                opts+=" --sctctl -s --maxrent= -m --incf= -f \
+                        --incpfi= -n --incvi= -i --all= -a \
+                        --csts= -c --ctemp= -t \
+                        --pdlu= -p --spare= -e --cwarn= -w \
+                        --ccf= -z"
+                        ;;
 		"help")
 		opts+=$NO_OPTS
 			;;
@@ -1676,7 +1695,9 @@ _nvme_subcmds () {
 	# Associative array of plugins and associated subcommands
 	# Order here is same as PLUGIN_OBJS in Makefile
 	typeset -Ar _plugin_subcmds=(
-		[amd]="config-ae config-get ctrl-primitive"
+		[amd]="config-ae config-get ctrl-primitive \
+			config-hs-change nvm-ss-hs-poll \
+			ctrlr-hs-poll"
 		[intel]="id-ctrl internal-log lat-stats \
 			set-bucket-thresholds lat-stats-tracking \
 			market-name smart-log-add temp-stats"
