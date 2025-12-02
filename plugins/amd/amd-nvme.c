@@ -15,10 +15,37 @@
 #include "plugin.h"
 #include "linux/types.h"
 #include "nvme-print.h"
-#include "nvme-wrap.h"
+#include <poll.h>
 
 #define CREATE_CMD
 #include "amd-nvme.h"
+
+#define DEFAULT_MCTP_NETWORK 1
+#define DEFAULT_MCTP_EID 10
+
+#define MCTP_TYPE_NVME          0x04
+#define MCTP_TYPE_MIC           0x80
+
+#if !defined(AF_MCTP)
+#define AF_MCTP 45
+#endif
+typedef uint8_t __u8;
+typedef uint16_t __u16;
+typedef __u8                    mctp_eid_t;
+
+struct mctp_addr {
+        mctp_eid_t              s_addr;
+};
+
+struct sockaddr_mctp {
+        unsigned short int      smctp_family;
+        __u16                   __smctp_pad0;
+        unsigned int            smctp_network;
+        struct mctp_addr        smctp_addr;
+        __u8                    smctp_type;
+        __u8                    smctp_tag;
+        __u8                    __smctp_pad1;
+};
 
 enum nvme_mi_command {
 	READ_NVME_MI_DATA_STRUCTURE,
@@ -35,8 +62,6 @@ enum nvme_mi_command {
 	MGMT_EP_BUFFER_WRITE,
 	SHUTDOWN,
 };
-
-
 
 typedef struct ae_supp_list_hdr_s {
 	uint8_t num_ae_supp_ds;
@@ -151,6 +176,71 @@ typedef enum ae_occ_scope_e {
 	AE_OCC_SCOPE_EG
 } ae_occ_scope_t;
 
+/* Data Structure Type (DTYP) values for Read NVMe-MI Data Structure command */
+enum nvme_mi_data_structure_type {
+	NVME_MI_DS_NVM_SUBSYSTEM_INFO = 0x00,
+	NVME_MI_DS_PORT_INFO = 0x01,
+	NVME_MI_DS_CONTROLLER_LIST = 0x02,
+	NVME_MI_DS_CONTROLLER_INFO = 0x03,
+	NVME_MI_DS_OPTIONAL_COMMAND_LIST = 0x04,
+	NVME_MI_DS_MGMT_EP_BUFFER_CMD_SUPPORT_LIST = 0x05,
+};
+
+/* NVM Subsystem Information Data Structure (Section 5.7.1) */
+typedef struct {
+	__u8 nump;        /* Number of Ports */
+	__u8 mjr;         /* NVMe-MI Major Version Number */
+	__u8 mnr;         /* NVMe-MI Minor Version Number */
+	__u8 nnsc;        /* NVMe-MI NVM Subsystem Capabilities */
+} __attribute__((packed)) nvm_subsystem_info_t;
+
+/* Port Information Data Structure (Section 5.7.2) */
+typedef struct {
+	__u8 prttyp;      /* Port Type */
+	__u8 prtcap;      /* Port Capabilities */
+	__u16 mmtus;      /* Maximum MCTP Transmission Unit Size */
+	__u32 mebs;       /* Management Endpoint Buffer Size */
+	__u8 ptsp[24];    /* Port Type Specific data */
+} __attribute__((packed)) port_info_t;
+
+/* Controller Information Data Structure (Section 5.7.4) */
+typedef struct {
+	__u8 portid;      /* Port Identifier */
+	__u8 reserved1[4];
+	__u8 prii;        /* PCIe Routing ID Information */
+	__u16 pri;        /* PCIe Routing ID */
+	__u16 pcivid;     /* PCI Vendor ID */
+	__u16 pcidid;     /* PCI Device ID */
+	__u16 pcisvid;    /* PCI Subsystem Vendor ID */
+	__u16 pcisdid;    /* PCI Subsystem Device ID */
+	__u8 pciesn;      /* PCIe Segment Number */
+	__u8 reserved2[15];
+} __attribute__((packed)) controller_info_t;
+
+/* Optionally Supported Command Data Structure (Section 5.7.5) */
+typedef struct {
+	__u8 ctyp;        /* Command Type */
+	__u8 opc;         /* Opcode */
+} __attribute__((packed)) opt_supported_cmd_t;
+
+/* Optionally Supported Command List Data Structure */
+typedef struct {
+	__u16 numcmd;     /* Number of Commands */
+	opt_supported_cmd_t commands[];  /* Variable length list */
+} __attribute__((packed)) opt_supported_cmd_list_t;
+
+/* Management Endpoint Buffer Supported Command Data Structure */
+typedef struct {
+	__u8 ctyp;        /* Command Type */
+	__u8 opc;         /* Opcode */
+} __attribute__((packed)) mgmt_ep_buffer_cmd_t;
+
+/* Management Endpoint Buffer Command Support List Data Structure */
+typedef struct {
+	__u16 numcmd;     /* Number of Commands */
+	mgmt_ep_buffer_cmd_t commands[];  /* Variable length list */
+} __attribute__((packed)) mgmt_ep_buffer_cmd_list_t;
+
 /**
  * enum nvme_mi_resp_status_e - NVME-MI response status field.
  */
@@ -186,39 +276,9 @@ struct ae_config {
 };
 
 struct get_config {
-    __u8 cid;
-	__u8 pid;
-	__u8 csi;
-};
-
-struct admin_command{
-  	__u8	opcode;
-	__u8	flags;
-	__u16	rsvd;
-	__u32	namespace_id;
-	__u32	data_len;
-	__u32	metadata_len;
-	__u32	cdw2;
-	__u32	cdw3;
-	__u32	cdw10;
-	__u32	cdw11;
-	__u32	cdw12;
-	__u32	cdw13;
-	__u32	cdw14;
-	__u32	cdw15;
-	char	*input_file;
-	char	*metadata;
-	bool	raw_binary;
-	bool	show_command;
-	bool	dry_run;
-	bool	read;
-	bool	write;
-	__u8	prefill;
-	bool	latency;
-	__u8    csi;
-	__u32	offset;
-	__u32	timeout_ms;
-	bool flood;
+                __u8 cid;
+                __u8 pid;
+                __u8 csi;
 };
 
 struct health_status_change {  
@@ -238,6 +298,7 @@ struct health_status_change {
     __u32 reserved : 19;    // Reserved (bits 13 to 31)  
 };
 
+#if 0
 struct composite_controller_status_flags {  
 	__u16 rdy : 1;          // Ready (bit 0)  
 	__u16 cfs : 1;          // Controller Fatal Status (bit 1)  
@@ -255,6 +316,7 @@ struct composite_controller_status_flags {
 	__u16 tcida : 1;        // Telemetry Controller-Initiated Data Available (bit 13)  
 	__u16 reserved_2 : 2;    // Reserved (bits 14 to 15 )  
 };
+#endif
 
 /**  
  * Controller Health Status Poll – NVMe Management Dword 0  
@@ -283,6 +345,7 @@ struct controller_health_status_poll_dwd1{
    	__u32 reserved;                       // Bits 5-30: Reserved  
    	__u32 clear_changed_flags;             // Bit 31: Clear Changed Flags (CCF)  
 };
+
 
 /**  
  * NVM Subsystem Health Data Structure (NSHDS)  
@@ -352,6 +415,7 @@ typedef struct {
     uint8_t reserved2[2];  
       
 } __attribute__((packed)) nvm_subsystem_health_data_structure_t;
+
 
 int parse_mi_resp_status(uint8_t status, uint8_t *resp_buffer) {
 	int rc = -1;
@@ -611,6 +675,261 @@ void parse_ae_occ_spec_info(uint8_t ae_occ_id,
 	
 }
 
+/**
+ * Parse and display NVM Subsystem Information Data Structure
+ * @param subsys_info: Pointer to the NVM Subsystem Information structure
+ */
+static void parse_nvm_subsystem_info(const nvm_subsystem_info_t *subsys_info)
+{
+	printf("=== NVM Subsystem Information Data Structure ===\n");
+	printf("Number of Ports (NUMP): %u\n", subsys_info->nump);
+	printf("NVMe-MI Major Version Number (MJR): %u\n", subsys_info->mjr);
+	printf("NVMe-MI Minor Version Number (MNR): %u\n", subsys_info->mnr);
+	
+	printf("NVMe-MI NVM Subsystem Capabilities (NNSC): 0x%02x\n", subsys_info->nnsc);
+	printf("  Status Reporting Enhancements (SRE): %s\n", 
+		   (subsys_info->nnsc & 0x01) ? "Supported" : "Not Supported");
+	printf("  Reserved bits [7:1]: 0x%02x\n", (subsys_info->nnsc >> 1) & 0x7F);
+}
+
+/**
+ * Parse and display Port Information Data Structure  
+ * @param port_info: Pointer to the Port Information structure
+ */
+static void parse_port_info(const port_info_t *port_info)
+{
+	const char *port_types[] = {"Inactive", "PCIe", "2-Wire", "Reserved"};
+	
+	printf("=== Port Information Data Structure ===\n");
+	printf("Port Type (PRTTYP): %u (%s)\n", port_info->prttyp,
+		   port_info->prttyp < 3 ? port_types[port_info->prttyp] : "Reserved");
+		   
+	printf("Port Capabilities (PRTCAP): 0x%02x\n", port_info->prtcap);
+	printf("  Command Initiated Auto Pause Supported (CIAPS): %s\n",
+		   (port_info->prtcap & 0x01) ? "Yes" : "No");
+	printf("  Asynchronous Event Messages Supported (AEMS): %s\n",
+		   (port_info->prtcap & 0x02) ? "Yes" : "No");
+	
+	printf("Maximum MCTP Transmission Unit Size (MMTUS): %u bytes\n", port_info->mmtus);
+	printf("Management Endpoint Buffer Size (MEBS): %u bytes\n", port_info->mebs);
+	
+	if (port_info->prttyp == 1) { /* PCIe */
+		printf("=== PCIe Port Specific Data ===\n");
+		printf("PCIe Maximum Payload Size: %u\n", port_info->ptsp[0]);
+		printf("PCIe Supported Link Speeds Vector: 0x%02x\n", port_info->ptsp[1]);
+		printf("PCIe Current Link Speed: %u\n", port_info->ptsp[2]);
+		printf("PCIe Maximum Link Width: %u\n", port_info->ptsp[3]);
+		printf("PCIe Negotiated Link Width: %u\n", port_info->ptsp[4]);
+		printf("PCIe Port Number: %u\n", port_info->ptsp[5]);
+	} else if (port_info->prttyp == 2) { /* 2-Wire */
+		printf("=== 2-Wire Port Specific Data ===\n");
+		printf("Current VPD Address (CVPDADDR): 0x%02x\n", port_info->ptsp[0]);
+		printf("Maximum VPD Access Frequency (MVPDFREQ): %u\n", port_info->ptsp[1]);
+		printf("Current Management Endpoint Address (CMEADDR): 0x%02x\n", port_info->ptsp[2]);
+		printf("2-Wire Protocols Supported (TWPRT): 0x%02x\n", port_info->ptsp[3]);
+		printf("NVMe Basic Management (NVMEBM): 0x%02x\n", port_info->ptsp[4]);
+	}
+}
+
+/**
+ * Parse and display Controller Information Data Structure
+ * @param ctrl_info: Pointer to the Controller Information structure  
+ */
+static void parse_controller_info(const controller_info_t *ctrl_info)
+{
+	printf("=== Controller Information Data Structure ===\n");
+	printf("Port Identifier (PORTID): %u\n", ctrl_info->portid);
+	printf("PCIe Routing ID Information (PRII): 0x%02x\n", ctrl_info->prii);
+	printf("  PCIe Routing ID Valid (PCIERIV): %s\n", 
+		   (ctrl_info->prii & 0x01) ? "Valid" : "Invalid");
+		   
+	printf("PCIe Routing ID (PRI): 0x%04x\n", ctrl_info->pri);
+	printf("  PCI Bus Number (PCIBN): %u\n", (ctrl_info->pri >> 8) & 0xFF);
+	printf("  PCI Device Number (PCIDN): %u\n", (ctrl_info->pri >> 3) & 0x1F);
+	printf("  PCI Function Number (PCIFN): %u\n", ctrl_info->pri & 0x07);
+	
+	printf("PCI Vendor ID (PCIVID): 0x%04x\n", ctrl_info->pcivid);
+	printf("PCI Device ID (PCIDID): 0x%04x\n", ctrl_info->pcidid);
+	printf("PCI Subsystem Vendor ID (PCISVID): 0x%04x\n", ctrl_info->pcisvid);
+	printf("PCI Subsystem Device ID (PCISDID): 0x%04x\n", ctrl_info->pcisdid);
+	printf("PCIe Segment Number (PCIESN): %u\n", ctrl_info->pciesn);
+}
+
+/**
+ * Parse and display Optionally Supported Command List Data Structure
+ * @param cmd_list: Pointer to the command list structure
+ * @param data_len: Length of the data structure
+ */
+static void parse_opt_supported_cmd_list(const opt_supported_cmd_list_t *cmd_list, __u16 data_len)
+{
+	printf("=== Optionally Supported Command List Data Structure ===\n");
+	printf("Number of Commands (NUMCMD): %u\n", cmd_list->numcmd);
+	
+	if (cmd_list->numcmd > 0) {
+		printf("Command List:\n");
+		for (int i = 0; i < cmd_list->numcmd && (i * 2 + 2) < data_len; i++) {
+			printf("  Command %d:\n", i);
+			printf("    Command Type (CTYP): 0x%02x\n", cmd_list->commands[i].ctyp);
+			printf("    NVMe-MI Message Type (NMIMT): 0x%02x\n", 
+				   (cmd_list->commands[i].ctyp >> 3) & 0x0F);
+			printf("    Opcode (OPC): 0x%02x\n", cmd_list->commands[i].opc);
+		}
+	}
+}
+
+/**
+ * Parse and display Management Endpoint Buffer Command Support List Data Structure
+ * @param cmd_list: Pointer to the command list structure
+ * @param data_len: Length of the data structure
+ */
+static void parse_mgmt_ep_buffer_cmd_list(const mgmt_ep_buffer_cmd_list_t *cmd_list, __u16 data_len)
+{
+	printf("=== Management Endpoint Buffer Command Support List Data Structure ===\n");
+	printf("Number of Commands (NUMCMD): %u\n", cmd_list->numcmd);
+	
+	if (cmd_list->numcmd > 0) {
+		printf("Command List:\n");
+		for (int i = 0; i < cmd_list->numcmd && (i * 2 + 2) < data_len; i++) {
+			printf("  Command %d:\n", i);
+			printf("    Command Type (CTYP): 0x%02x\n", cmd_list->commands[i].ctyp);
+			printf("    NVMe-MI Message Type (NMIMT): 0x%02x\n",
+				   (cmd_list->commands[i].ctyp >> 3) & 0x0F);
+			printf("    Opcode (OPC): 0x%02x\n", cmd_list->commands[i].opc);
+		}
+	}
+}
+
+/**
+ * Execute NVMe-MI Read Data Structure command
+ * @param dev: NVMe device
+ * @param dtyp: Data Structure Type
+ * @param portid: Port Identifier (used for certain data structures)
+ * @param ctrlid: Controller Identifier (used for certain data structures) 
+ * @param iocsi: I/O Command Set Identifier (used for certain data structures)
+ * @param csi: Command Slot Identifier
+ */
+static int nvme_amd_read_data_structure(struct nvme_dev *dev, __u8 dtyp, __u8 portid, 
+                                        __u16 ctrlid, __u8 iocsi, __u8 csi)
+{
+	struct nvme_mi_mi_req_hdr mi_req = {0};
+	struct {
+		struct nvme_mi_mi_resp_hdr mi_hdr;
+		char buffer[4096];
+	} resp = { 0 };
+
+	size_t len = 4096;
+	int rc = 0;
+
+	/* Set up the MI request header */
+	mi_req.opcode = READ_NVME_MI_DATA_STRUCTURE;  /* Opcode 0 for Read NVMe-MI Data Structure */
+	
+	/* Set up NVMe Management Dword 0 - Figure 109 in spec */
+	mi_req.cdw0 = ((__u32)dtyp << 24) |         /* Bits 31:24 - Data Structure Type */
+	              ((__u32)portid << 16) |       /* Bits 23:16 - Port Identifier */
+	              ((__u32)ctrlid);              /* Bits 15:00 - Controller Identifier */
+	
+	/* Set up NVMe Management Dword 1 - Figure 110 in spec */
+	mi_req.cdw1 = (__u32)iocsi;                 /* Bits 07:00 - I/O Command Set Identifier */
+
+	printf("Sending Read NVMe-MI Data Structure command:\n");
+	printf("  Data Structure Type (DTYP): 0x%02x\n", dtyp);
+	printf("  Port Identifier (PORTID): 0x%02x\n", portid);
+	printf("  Controller Identifier (CTRLID): 0x%04x\n", ctrlid);
+	printf("  I/O Command Set Identifier (IOCSI): 0x%02x\n", iocsi);
+	printf("  Command Slot Identifier (CSI): 0x%02x\n", csi);
+
+	rc = nvme_mi_mi_xfer(dev->mi.ep, &mi_req, 0, &resp.mi_hdr, &len, csi);
+	
+	if (rc != 0) {
+		printf("ERROR: NVMe-MI transfer failed with error %d\n", rc);
+		return rc;
+	}
+
+	printf("\nNVMe-MI Response Status: %d\n", resp.mi_hdr.status);
+	
+	if (resp.mi_hdr.status != STATUS_SUCCESS) {
+		printf("ERROR: Command failed with status %d\n", resp.mi_hdr.status);
+		return -1;
+	}
+
+	/* Parse the Response Data Length from NVMe Management Response - Figure 111 */
+	__u16 rdl = resp.mi_hdr.nmresp[0] | (resp.mi_hdr.nmresp[1] << 8);
+	printf("Response Data Length (RDL): %u bytes\n", rdl);
+
+	if (rdl == 0) {
+		printf("No response data returned\n");
+		return 0;
+	}
+
+	/* Parse the response data based on Data Structure Type */
+	switch (dtyp) {
+	case NVME_MI_DS_NVM_SUBSYSTEM_INFO:
+		if (rdl >= sizeof(nvm_subsystem_info_t)) {
+			parse_nvm_subsystem_info((nvm_subsystem_info_t *)resp.buffer);
+		} else {
+			printf("ERROR: Insufficient data length for NVM Subsystem Information\n");
+		}
+		break;
+		
+	case NVME_MI_DS_PORT_INFO:
+		if (rdl >= sizeof(port_info_t)) {
+			parse_port_info((port_info_t *)resp.buffer);
+		} else {
+			printf("ERROR: Insufficient data length for Port Information\n");
+		}
+		break;
+		
+	case NVME_MI_DS_CONTROLLER_LIST: {
+		/* Controller List is a simple list of 2-byte Controller IDs */
+		__u16 *ctrl_list = (__u16 *)resp.buffer;
+		int num_controllers = rdl / 2;
+		printf("=== Controller List Data Structure ===\n");
+		printf("Number of Controllers: %d\n", num_controllers);
+		for (int i = 0; i < num_controllers; i++) {
+			printf("  Controller %d ID: 0x%04x\n", i, ctrl_list[i]);
+		}
+		break;
+	}
+	
+	case NVME_MI_DS_CONTROLLER_INFO:
+		if (rdl >= sizeof(controller_info_t)) {
+			parse_controller_info((controller_info_t *)resp.buffer);
+		} else {
+			printf("ERROR: Insufficient data length for Controller Information\n");
+		}
+		break;
+		
+	case NVME_MI_DS_OPTIONAL_COMMAND_LIST:
+		if (rdl >= sizeof(opt_supported_cmd_list_t)) {
+			parse_opt_supported_cmd_list((opt_supported_cmd_list_t *)resp.buffer, rdl);
+		} else {
+			printf("ERROR: Insufficient data length for Optional Command List\n");
+		}
+		break;
+		
+	case NVME_MI_DS_MGMT_EP_BUFFER_CMD_SUPPORT_LIST:
+		if (rdl >= sizeof(mgmt_ep_buffer_cmd_list_t)) {
+			parse_mgmt_ep_buffer_cmd_list((mgmt_ep_buffer_cmd_list_t *)resp.buffer, rdl);
+		} else {
+			printf("ERROR: Insufficient data length for Management Endpoint Buffer Command List\n");
+		}
+		break;
+		
+	default:
+		printf("ERROR: Unknown Data Structure Type: 0x%02x\n", dtyp);
+		printf("Raw response data (%u bytes):\n", rdl);
+		for (int i = 0; i < rdl && i < 256; i++) {
+			if (i % 16 == 0) printf("%04x: ", i);
+			printf("%02x ", (unsigned char)resp.buffer[i]);
+			if (i % 16 == 15) printf("\n");
+		}
+		if (rdl % 16 != 0) printf("\n");
+		break;
+	}
+
+	return 0;
+}
+
 static int nvme_amd_config_get(struct nvme_dev *dev, __u8 cid, __u8 pid, __u8 csi)
 {
 	struct nvme_mi_mi_req_hdr mi_req = {0};
@@ -624,6 +943,7 @@ static int nvme_amd_config_get(struct nvme_dev *dev, __u8 cid, __u8 pid, __u8 cs
 
 	mi_req.opcode = 4;
 	mi_req.cdw0 = ((uint32_t)cid) | ((uint32_t)pid << 24);
+	printf("Plugin csi %d\n", csi);
 	rc = nvme_mi_mi_xfer(dev->mi.ep, &mi_req, 0, &resp.mi_hdr, &len, csi);
 	assert(rc == 0);
 
@@ -730,7 +1050,7 @@ static int nvme_amd_set_ae(struct nvme_dev *dev, __u8 *enable_list, __u8 *disabl
 
 	// Store elements in enable_list
 	int i = 0;
-	while (enable_list[i] != 0 && i < sizeof(enable_list)) {
+	while (enable_list[i] >= 0 && i < sizeof(enable_list)) {
 		req.ae_en_info[i].ae_enable_len = 3;
 		req.ae_en_info[i].ae_enable_id = enable_list[i];
 		req.ae_en_info[i].ae_enable = 1;
@@ -816,13 +1136,12 @@ static int config_ae(int argc, char **argv, struct command *cmd, struct plugin *
 	const char *numaee = "Number of AE to be configured";
     const char *enable_aeid_list = "Comma seprated event ID List to be enabled";
 	const char *disable_aeid_list = "Comma seprated event ID List to be disabled";
-	const char *aeelver = "AE Event List Version";
-	const char *aeetl = "AE Event List Total length";
-	const char *aeelhl = "AE Event List Header length";
+	const char * aeelver = "AE Event List Version";
+	const char * aeetl = "AE Event List Total length";
+	const char * aeelhl = "AE Event List Header length";
 	const char *csi = "Command slot identifier";
 
 	_cleanup_nvme_dev_ struct nvme_dev *dev = NULL;
-	__u32 result;
 	struct timeval start_time, end_time;
 	int status = 0, err = 0;
 	__u8 enable_list[34] = {0};
@@ -886,8 +1205,7 @@ static int config_ae(int argc, char **argv, struct command *cmd, struct plugin *
 	err = nvme_amd_set_ae(dev, enable_list, disable_list,
 						 cfg.aerd, cfg.aemd,
 						 cfg.numaee, cfg.aeelver,
-						 cfg.aeetl, cfg.aeelhl,
-						 cfg.csi);
+						 cfg.aeetl, cfg.aeelhl, cfg.csi);
 
 	gettimeofday(&end_time, NULL);
 	
@@ -906,10 +1224,8 @@ static int config_get(int argc, char **argv, struct command *cmd, struct plugin 
 	const char *csi = "Command slot identifier";
 	
 	_cleanup_nvme_dev_ struct nvme_dev *dev = NULL;
-	__u32 result;
 	struct timeval start_time, end_time;
 	int status = 0, err = 0;
-	
 	struct get_config cfg = {
 		.cid = 0,
 		.pid = 0,
@@ -920,7 +1236,7 @@ static int config_get(int argc, char **argv, struct command *cmd, struct plugin 
 		  OPT_UINT("cid", 'c', &cfg.cid, cid),
 		  OPT_UINT("pid", 'p', &cfg.pid, pid),
 		  OPT_UINT("csi", 'c', &cfg.csi, csi),
-		OPT_END()
+		  OPT_END()
 	};
 
 	err = parse_and_open(&dev, argc, argv, desc, opts);
@@ -928,7 +1244,7 @@ static int config_get(int argc, char **argv, struct command *cmd, struct plugin 
 		return err;
 
 	gettimeofday(&start_time, NULL);
-
+	printf("config_get csi %d\n", cfg.csi);
 	err = nvme_amd_config_get(dev, cfg.cid, cfg.pid, cfg.csi);
 						 
 	gettimeofday(&end_time, NULL);
@@ -950,7 +1266,6 @@ static int ctrl_primitive(int argc, char **argv, struct command *cmd, struct plu
 	
 	
 	_cleanup_nvme_dev_ struct nvme_dev *dev = NULL;
-	__u32 result;
 	struct timeval start_time, end_time;
 	int status = 0, err = 0;
 	int rc = 0;
@@ -985,7 +1300,6 @@ static int ctrl_primitive(int argc, char **argv, struct command *cmd, struct plu
 
 	gettimeofday(&start_time, NULL);
 
-	
 
 	static const struct {
 		const char *name;
@@ -1024,6 +1338,8 @@ static int ctrl_primitive(int argc, char **argv, struct command *cmd, struct plu
 		return -1;
 	}
 
+	
+	printf("BHUPI : TAG VALUE %d",cfg.tag);	
 	rc = nvme_mi_control(dev->mi.ep, opcode, cfg.cpsp, &cpsr, cfg.csi, cfg.tag); /* cpsp reserved in example */
 	if (rc) {
 		printf("Response: %d\n", rc);
@@ -1031,7 +1347,6 @@ static int ctrl_primitive(int argc, char **argv, struct command *cmd, struct plu
 		return -1;
 	}
 
-	printf("NVMe control primitive\n");
 	switch (opcode) {
 	case nvme_mi_control_opcode_pause:
 		printf(" cpsr : %#x\n", cpsr);
@@ -1075,6 +1390,274 @@ static int ctrl_primitive(int argc, char **argv, struct command *cmd, struct plu
 	return err;
 }
 
+#if 0
+#define MAX_BATCH_COMMANDS 100
+#define MAX_COMMAND_LENGTH 512
+
+struct nvme_mi_transport_mctp_async {
+    int net;
+    __u8 eid;
+    int sd;
+    void *resp_buf;
+    size_t resp_buf_size;
+    pthread_t poll_thread;
+    bool stop_polling;
+};
+
+static void *poll_socket(void *arg) {
+    struct nvme_mi_transport_mctp_async *mctp = (struct nvme_mi_transport_mctp_async *)arg;
+    struct pollfd pollfds[1];
+    struct msghdr resp_msg;
+    struct iovec resp_iov[1];
+    ssize_t len;
+
+    pollfds[0].fd = mctp->sd;
+    pollfds[0].events = POLLIN;
+
+    while (!mctp->stop_polling) {
+        int rc = poll(pollfds, 1, 1000); // Poll with a timeout of 60 seconds
+        if (rc < 0) {
+            if (errno == EINTR)
+                continue;
+            break;
+        }
+
+        if (rc == 0) // Timeout
+            continue;
+
+        if (pollfds[0].revents & POLLIN) {
+            memset(&resp_msg, 0, sizeof(resp_msg));
+            resp_iov[0].iov_base = mctp->resp_buf;
+            resp_iov[0].iov_len = mctp->resp_buf_size;
+            resp_msg.msg_iov = resp_iov;
+            resp_msg.msg_iovlen = 1;
+
+            len = recvmsg(mctp->sd, &resp_msg, MSG_DONTWAIT);
+            if (len < 0) {
+		    printf("Error receiving message\n");
+                continue;
+            }
+
+		printf("Received message: ");
+		for (size_t i = 0; i < len; i++) {
+			printf("%02x ", ((unsigned char *)mctp->resp_buf)[i]);
+		}
+		printf("\n");
+            // Process the message here
+        }
+    }
+
+    return NULL;
+}
+
+static int create_mctp_listener_thread(int net, __u8 eid, size_t resp_buf_size) {
+	struct nvme_mi_transport_mctp_async *mctp = malloc(sizeof(struct nvme_mi_transport_mctp_async));
+	if (!mctp) {
+		fprintf(stderr, "Error: Failed to allocate memory for MCTP transport.\n");
+		return -1;
+	}
+
+	mctp->net = net;
+	mctp->eid = eid;
+	mctp->resp_buf_size = resp_buf_size;
+	mctp->resp_buf = malloc(resp_buf_size);
+	if (!mctp->resp_buf) {
+		fprintf(stderr, "Error: Failed to allocate memory for response buffer.\n");
+		free(mctp);
+		return -1;
+	}
+
+	mctp->sd = socket(AF_MCTP, SOCK_DGRAM, 0);
+	if (mctp->sd < 0) {
+		fprintf(stderr, "Error: Failed to create MCTP socket: %m\n");
+		free(mctp->resp_buf);
+		free(mctp);
+		return -1;
+	}
+
+	 int sockfd = socket(AF_MCTP, SOCK_DGRAM, 0);
+    if (sockfd < 0) {
+        perror("MCTP socket creation failed");
+        exit(1);
+    }
+
+	struct sockaddr_mctp addr = {
+		.smctp_family = AF_MCTP,
+		.smctp_network = net,
+    		.smctp_addr.s_addr = DEFAULT_MCTP_EID,
+    		.smctp_type = MCTP_TYPE_NVME | MCTP_TYPE_MIC,
+	};
+
+	if (bind(mctp->sd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+		fprintf(stderr, "Error: Failed to bind MCTP socket: %m\n");
+		close(mctp->sd);
+		free(mctp->resp_buf);
+		free(mctp);
+		return -1;
+	}
+
+	mctp->stop_polling = false;
+
+	if (pthread_create(&mctp->poll_thread, NULL, poll_socket, mctp) != 0) {
+		fprintf(stderr, "Error: Failed to create polling thread.\n");
+		close(mctp->sd);
+		free(mctp->resp_buf);
+		free(mctp);
+		return -1;
+	}
+
+	printf("MCTP listener thread created successfully.\n");
+	return 0;
+}
+
+struct batch_command {
+    char command[MAX_COMMAND_LENGTH];
+    char options[MAX_COMMAND_LENGTH];
+    __u8 opcode;
+    __u8 flags;
+    __u32 nsid;
+    __u32 cdw10;
+    __u32 cdw11;
+    __u32 cdw12;
+    __u32 cdw13;
+    __u32 cdw14;
+    __u32 cdw15;
+    __u32 data_len;
+    void *data;
+    __u32 metadata_len;
+    void *metadata;
+    __u32 timeout_ms;
+    __u8 csi;
+    __u32 offset;
+};
+
+static struct batch_command batch_commands[MAX_BATCH_COMMANDS];
+static int batch_command_count = 0;
+
+static int add_batch_command(const char *command, const char *options) {
+    if (batch_command_count >= MAX_BATCH_COMMANDS) {
+        fprintf(stderr, "Error: Maximum batch command limit reached.\n");
+        return -1;
+    }
+
+    strncpy(batch_commands[batch_command_count].command, command, MAX_COMMAND_LENGTH - 1);
+    strncpy(batch_commands[batch_command_count].options, options, MAX_COMMAND_LENGTH - 1);
+
+    // Parse options for admin-passthru
+    if (strcmp(command, "admin-passthru") == 0) {
+        sscanf(options,
+               "--opcode=%hhx --flags=%hhx --nsid=%u --cdw10=%x --cdw11=%x --cdw12=%x --cdw13=%x --cdw14=%x --cdw15=%x --data_len=%u --timeout_ms=%u --csi=%hhx --offset=%u",
+               &batch_commands[batch_command_count].opcode,
+               &batch_commands[batch_command_count].flags,
+               &batch_commands[batch_command_count].nsid,
+               &batch_commands[batch_command_count].cdw10,
+               &batch_commands[batch_command_count].cdw11,
+               &batch_commands[batch_command_count].cdw12,
+               &batch_commands[batch_command_count].cdw13,
+               &batch_commands[batch_command_count].cdw14,
+               &batch_commands[batch_command_count].cdw15,
+               &batch_commands[batch_command_count].data_len,
+               &batch_commands[batch_command_count].timeout_ms,
+               &batch_commands[batch_command_count].csi,
+               &batch_commands[batch_command_count].offset);
+    }
+
+    batch_command_count++;
+    return 0;
+}
+
+static int execute_batch_commands(struct nvme_dev *dev) {
+    for (int i = 0; i < batch_command_count; i++) {
+        printf("Executing command %d: %s %s\n", i + 1, batch_commands[i].command, batch_commands[i].options);
+
+        if (strcmp(batch_commands[i].command, "admin-passthru") == 0) {
+            int rc = nvme_cli_admin_batch_passthru(dev,
+                                             batch_commands[i].opcode,
+                                             batch_commands[i].flags,
+                                             0, // reserved
+                                             batch_commands[i].nsid,
+                                             0, // cdw2
+                                             0, // cdw3
+                                             batch_commands[i].cdw10,
+                                             batch_commands[i].cdw11,
+                                             batch_commands[i].cdw12,
+                                             batch_commands[i].cdw13,
+                                             batch_commands[i].cdw14,
+                                             batch_commands[i].cdw15,
+                                             batch_commands[i].data_len,
+                                             batch_commands[i].data,
+                                             batch_commands[i].metadata_len,
+                                             batch_commands[i].metadata,
+                                             batch_commands[i].timeout_ms,
+                                             NULL, // result
+                                             batch_commands[i].csi,
+                                             batch_commands[i].offset);
+            if (rc) {
+                fprintf(stderr, "Error: admin-passthru command failed with return code %d.\n", rc);
+                return rc;
+            }
+        } else {
+			char full_command[256];
+			snprintf(full_command, sizeof(full_command), "nvme amd %s %s", batch_commands[i].command, batch_commands[i].options);
+    		system(full_command); // Executes the command in the shell
+			return 0;
+        }
+    }
+    return 0;
+}
+static int batch_mode(int argc, char **argv, struct command *cmd, struct plugin *plugin) {
+    const char *desc = (
+        "Enter batch mode to queue multiple NVMe commands with options.\n"
+        "Commands will be executed sequentially after exiting batch mode.\n"
+    );
+
+    printf("%s\n", desc);
+    printf("Enter commands in the format: <command> <options>\n");
+    printf("Type 'run' to execute the batch or 'exit' to cancel.\n");
+
+    char input[MAX_COMMAND_LENGTH * 2];
+    _cleanup_nvme_dev_ struct nvme_dev *dev = NULL;
+    int err = parse_and_open(&dev, argc, argv, desc, NULL);
+    printf("\nBHUPI 1\n");
+    if (err)
+        return err;
+    create_mctp_listener_thread(1, 9, 4096);
+    while (1) {
+        printf("batch> ");
+        if (!fgets(input, sizeof(input), stdin)) {
+            fprintf(stderr, "Error reading input.\n");
+            return -1;
+        }
+
+        // Remove trailing newline
+        input[strcspn(input, "\n")] = '\0';
+
+        if (strcmp(input, "run") == 0) {
+            int rc = execute_batch_commands(dev);
+			if (rc == 0) {
+				printf("Batch commands executed successfully.\n");
+			}
+        } else if (strcmp(input, "exit") == 0) {
+            printf("Exiting batch mode.\n");
+			//nvme_mi_async_stop_polling(dev->mi.ep);
+            return 0;
+        } else {
+            char *command = strtok(input, " ");
+            char *options = strtok(NULL, "");
+
+            if (!command) {
+                fprintf(stderr, "Error: Invalid input format.\n");
+                continue;
+            }
+
+            if (add_batch_command(command, options ? options : "") != 0) {
+                return -1;
+            }
+        }
+    }
+}
+#endif
+
 static int set_health_status_change(int argc, char **argv, struct command *cmd, struct plugin *plugin)
 {
 	const char *desc =(
@@ -1095,7 +1678,6 @@ static int set_health_status_change(int argc, char **argv, struct command *cmd, 
     const char *tcida = "Telemetry Controller-Initiated Data Available (bit 12)";
 	
 	_cleanup_nvme_dev_ struct nvme_dev *dev = NULL;
-	__u32 result;
 	struct timeval start_time, end_time;
 	int status = 0, err = 0;
 	uint8_t cid = 2, csi = 0;
@@ -1136,7 +1718,6 @@ static int set_health_status_change(int argc, char **argv, struct command *cmd, 
 	  	OPT_END()
 	};
 
-	
 	err = parse_and_open(&dev, argc, argv, desc, opts);
 	if (err)
 		return err;
@@ -1275,7 +1856,6 @@ static int nvm_ss_hlth_stat_poll(int argc, char **argv, struct command *cmd, str
 	const char *cs = "Clear Status (bit 31)";
     
 	_cleanup_nvme_dev_ struct nvme_dev *dev = NULL;
-	__u32 result;
 	struct timeval start_time, end_time;
 	int status = 0, err = 0;
 	uint8_t csi = 0;
@@ -1375,8 +1955,8 @@ typedef struct {
     union {  
         uint16_t raw;  
         struct {
-			uint8_t ready : 1;
-			uint8_t controller_fatal_status : 1; // Bit 1: Controller Fatal Status (CFS)
+	    uint8_t ready : 1;
+	    uint8_t controller_fatal_status : 1; // Bit 1: Controller Fatal Status (CFS)
             uint8_t shutdown_status : 2;             // Bits 2-3: Shutdown Status (SHST)  
             uint8_t nvm_subsystem_reset_occurred : 1;// Bit 4: NVM Subsystem Reset Occurred (NSSRO)  
             uint8_t controller_enable_change_occurred : 1; // Bit 5: Controller Enable Change Occurred (CECO)  
@@ -1484,10 +2064,174 @@ void print_controller_health_data(const controller_health_data_structure_t *chds
 	printf("    Telemetry Controller-Initiated Data Available (TCIDA): %d\n", chds->flags.bits.telemetry_controller_initiated_data_available);
 }
 
+static int nvme_amd_reset(struct nvme_dev *dev, __u8 rst, __u8 csi)
+{
+	struct nvme_mi_mi_req_hdr mi_req = {0};
+	struct {
+		struct nvme_mi_mi_resp_hdr mi_hdr;
+		char buffer[4096];
+	} resp = { 0 };
+
+	size_t len = 4096;
+	int rc = 0;
+
+	// Opcode for Reset command (0x07 based on enum nvme_mi_command)
+	mi_req.opcode = 0x07;
+	
+	// NVMe Management Dword 0 contains RST field (bits 0-1)
+	mi_req.cdw0 = (uint32_t)(rst & 0x03);
+	mi_req.cdw0 = mi_req.cdw0 << 24;
+	
+	printf("Sending Reset command with RST=%d, CSI=%d\n", rst, csi);
+	printf("cdw0 field value is: %08x\n", mi_req.cdw0);
+
+	rc = nvme_mi_mi_xfer(dev->mi.ep, &mi_req, 0, &resp.mi_hdr, &len, csi);
+	assert(rc == 0);
+
+	printf("\nSTATUS:%d\n", resp.mi_hdr.status);
+	
+	if (resp.mi_hdr.status) {
+		int status = parse_mi_resp_status(resp.mi_hdr.status, (uint8_t *)resp.buffer);
+		if (status != 1) return -1;
+	} else {
+		printf("Reset command completed successfully\n");
+	}
+	
+	return 0;
+}
+
+static int reset(int argc, char **argv, struct command *cmd, struct plugin *plugin)
+{
+	const char *desc = (
+		"Send a Reset NVMe-MI command to reset the NVM subsystem, controller, or port.\n"
+		"Return results.\n");
+
+	const char *rst = "Reset Type: 0=NVM Subsystem Reset";
+	const char *csi = "Command slot identifier";
+
+	_cleanup_nvme_dev_ struct nvme_dev *dev = NULL;
+	struct timeval start_time, end_time;
+	int err = 0;
+
+	struct reset_config {
+		__u8 rst;
+		__u8 csi;
+	};
+
+	struct reset_config cfg = {
+		.rst = 0,
+		.csi = 0,
+	};
+
+	OPT_ARGS(opts) = {
+		OPT_UINT("rst", 'r', &cfg.rst, rst),
+		OPT_UINT("csi", 'c', &cfg.csi, csi),
+		OPT_END()
+	};
+
+	err = parse_and_open(&dev, argc, argv, desc, opts);
+	if (err)
+		return err;
+
+	if (cfg.rst > 0) {
+		nvme_show_error("Invalid reset type. Must be 0 (NVM Subsystem Reset)");
+		return -EINVAL;
+	}
+
+	gettimeofday(&start_time, NULL);
+	printf("reset csi %d\n", cfg.csi);
+	err = nvme_amd_reset(dev, cfg.rst, cfg.csi);
+	gettimeofday(&end_time, NULL);
+
+	return err;
+}
+
+static int nvme_amd_shutdown(struct nvme_dev *dev, __u8 sd, __u8 csi)
+{
+	struct nvme_mi_mi_req_hdr mi_req = {0};
+	struct {
+		struct nvme_mi_mi_resp_hdr mi_hdr;
+		char buffer[4096];
+	} resp = { 0 };
+
+	size_t len = 4096;
+	int rc = 0;
+
+	// Opcode for Shutdown command (0x0C based on enum nvme_mi_command)
+	mi_req.opcode = 0x0C;
+	
+	// NVMe Management Dword 0 contains SD field (bits 0-1)
+	mi_req.cdw0 = (uint32_t)(sd & 0xFF);
+	mi_req.cdw0 = mi_req.cdw0 << 24;
+	
+	printf("Sending Shutdown command with SD=%d, CSI=%d\n", sd, csi);
+	printf("cdw0 field value is: %08x\n", mi_req.cdw0);
+
+	rc = nvme_mi_mi_xfer(dev->mi.ep, &mi_req, 0, &resp.mi_hdr, &len, csi);
+	assert(rc == 0);
+
+	printf("\nSTATUS:%d\n", resp.mi_hdr.status);
+	
+	if (resp.mi_hdr.status) {
+		int status = parse_mi_resp_status(resp.mi_hdr.status, (uint8_t *)resp.buffer);
+		if (status != 1) return -1;
+	} else {
+		printf("Shutdown command completed successfully\n");
+	}
+	
+	return 0;
+}
+
+static int amd_shutdown(int argc, char **argv, struct command *cmd, struct plugin *plugin)
+{
+	const char *desc = (
+		"Send a Shutdown NVMe-MI command to prepare the NVM subsystem or controller for shutdown.\n"
+		"Return results.\n");
+
+	const char *sd = "Shutdown Type: 0=Normal Shutdown, 1=Abrupt Shutdown";
+	const char *csi = "Command slot identifier";
+
+	_cleanup_nvme_dev_ struct nvme_dev *dev = NULL;
+	struct timeval start_time, end_time;
+	int err = 0;
+
+	struct shutdown_config {
+		__u8 sd;
+		__u8 csi;
+	};
+
+	struct shutdown_config cfg = {
+		.sd = 0,
+		.csi = 0,
+	};
+
+	OPT_ARGS(opts) = {
+		OPT_UINT("sd", 's', &cfg.sd, sd),
+		OPT_UINT("csi", 'c', &cfg.csi, csi),
+		OPT_END()
+	};
+
+	err = parse_and_open(&dev, argc, argv, desc, opts);
+	if (err)
+		return err;
+
+	if (cfg.sd > 1) {
+		nvme_show_error("Invalid shutdown type. Must be 0 (Normal Shutdown) or 1 (Abrupt Shutdown)");
+		return -EINVAL;
+	}
+
+	gettimeofday(&start_time, NULL);
+	printf("shutdown csi %d\n", cfg.csi);
+	err = nvme_amd_shutdown(dev, cfg.sd, cfg.csi);
+	gettimeofday(&end_time, NULL);
+
+	return err;
+}
+
 static int ctrlr_hlth_stat_poll(int argc, char **argv, struct command *cmd, struct plugin *plugin)
 {
 	const char *desc =(
-		"Send a Controller Health Status Poll command determine changes in health status\n"); 
+		"Send a Controller Health Status Poll command determine changes in health status\n");
 
 	const char *starting_controller_id = "Starting Controller ID (SCTCTL)";
 	const char *maximum_response_entries = "Maximum Response Entries (MAXRENT)";
@@ -1503,7 +2247,6 @@ static int ctrlr_hlth_stat_poll(int argc, char **argv, struct command *cmd, stru
 	const char *clear_changed_flags = "Clear Changed Flags (CCF)";
     
 	_cleanup_nvme_dev_ struct nvme_dev *dev = NULL;
-	__u32 result;
 	struct timeval start_time, end_time;
 	int status = 0, err = 0;
 	uint8_t cid = 2, csi = 0;
@@ -1605,380 +2348,78 @@ static int ctrlr_hlth_stat_poll(int argc, char **argv, struct command *cmd, stru
 
 	return err;
 }
-#if 0
-struct nvme_mi_transport_mctp_async {
-    int net;
-    __u8 eid;
-    int sd;
-    void *resp_buf;
-    size_t resp_buf_size;
-    pthread_t poll_thread;
-    bool stop_polling;
-};
 
-static void *poll_socket(void *arg) {
-    struct nvme_mi_transport_mctp_async *mctp = (struct nvme_mi_transport_mctp_async *)arg;
-    struct pollfd pollfds[1];
-    struct msghdr resp_msg;
-    struct iovec resp_iov[1];
-    ssize_t len;
+/**
+ * Read NVMe-MI Data Structure command interface
+ * Implements the command-line interface for the Read NVMe-MI Data Structure command
+ * as defined in Section 5.7 of the NVM Express Management Interface Specification
+ */
+static int read_nvme_mi_data_structure(int argc, char **argv, struct command *cmd, struct plugin *plugin)
+{
+	const char *desc = (
+		"Submit a Read NVMe-MI Data Structure command to retrieve information about the "
+		"NVM Subsystem, Management Endpoint, or NVMe Controllers. "
+		"Different data structure types provide different types of information."
+	);
 
-    pollfds[0].fd = mctp->sd;
-    pollfds[0].events = POLLIN;
-
-    while (!mctp->stop_polling) {
-        int rc = poll(pollfds, 1, 1000); // Poll with a timeout of 60 seconds
-        if (rc < 0) {
-            if (errno == EINTR)
-                continue;
-            nvme_msg(NULL, LOG_ERR, "Polling error: %m\n");
-            break;
-        }
-
-        if (rc == 0) // Timeout
-            continue;
-
-        if (pollfds[0].revents & POLLIN) {
-            memset(&resp_msg, 0, sizeof(resp_msg));
-            resp_iov[0].iov_base = mctp->resp_buf;
-            resp_iov[0].iov_len = mctp->resp_buf_size;
-            resp_msg.msg_iov = resp_iov;
-            resp_msg.msg_iovlen = 1;
-
-            len = recvmsg(mctp->sd, &resp_msg, MSG_DONTWAIT);
-            if (len < 0) {
-                nvme_msg(NULL, LOG_ERR, "Error receiving message: %m\n");
-                continue;
-            }
-
-            nvme_msg(NULL, LOG_INFO, "Received message of length %zd\n", len);
-			printf("Received message: ");
-			for (size_t i = 0; i < len; i++) {
-				printf("%02x ", ((unsigned char *)mctp->resp_buf)[i]);
-			}
-			printf("\n");
-            // Process the message here
-        }
-    }
-
-    return NULL;
-}
-static int create_mctp_listener_thread(int net, __u8 eid, size_t resp_buf_size, struct nvme_mi_transport_mctp_async *mctp)
- {
-	if (!mctp) {
-		fprintf(stderr, "Error: Failed to allocate memory for MCTP transport.\n");
-		return -1;
-	}
-
-	mctp->net = net;
-	mctp->eid = eid;
-	mctp->resp_buf_size = resp_buf_size;
-	mctp->resp_buf = malloc(resp_buf_size);
-	if (!mctp->resp_buf) {
-		fprintf(stderr, "Error: Failed to allocate memory for response buffer.\n");
-		free(mctp);
-		return -1;
-	}
-
-	mctp->sd = socket(AF_MCTP, SOCK_DGRAM, 0);
-	if (mctp->sd < 0) {
-		fprintf(stderr, "Error: Failed to create MCTP socket: %m\n");
-		free(mctp->resp_buf);
-		free(mctp);
-		return -1;
-	}
-
-	struct sockaddr_mctp addr = {
-		.smctp_family = AF_MCTP,
-		.smctp_network = net,
-		.smctp_eid = eid,
-	};
-
-	if (bind(mctp->sd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
-		fprintf(stderr, "Error: Failed to bind MCTP socket: %m\n");
-		close(mctp->sd);
-		free(mctp->resp_buf);
-		free(mctp);
-		return -1;
-	}
-
-	mctp->stop_polling = false;
-
-	if (pthread_create(&mctp->poll_thread, NULL, poll_socket, mctp) != 0) {
-		fprintf(stderr, "Error: Failed to create polling thread.\n");
-		close(mctp->sd);
-		free(mctp->resp_buf);
-		free(mctp);
-		return -1;
-	}
-
-	printf("MCTP listener thread created successfully.\n");
-	return 0;
-}
-
-static void stop_mctp_listener_thread(struct nvme_mi_transport_mctp_async *mctp) {
-	if (!mctp) {
-		fprintf(stderr, "Error: MCTP transport is NULL.\n");
-		return;
-	}
-
-	mctp->stop_polling = true;
-
-	if (pthread_join(mctp->poll_thread, NULL) != 0) {
-		fprintf(stderr, "Error: Failed to join polling thread.\n");
-	} else {
-		printf("MCTP listener thread stopped successfully.\n");
-	}
-
-	close(mctp->sd);
-	free(mctp->resp_buf);
-	free(mctp);
-}
-
-static int admin_cmd(int argc, char **argv, struct command *cmd, struct plugin *plugin) {
-    const char *opcode = "opcode (required)";
-	const char *cflags = "command flags";
-	const char *rsvd = "value for reserved field";
-	const char *data_len = "data I/O length (bytes)";
-	const char *metadata_len = "metadata seg. length (bytes)";
-	const char *metadata = "metadata input or output file";
-	const char *cdw2 = "command dword 2 value";
-	const char *cdw3 = "command dword 3 value";
-	const char *cdw10 = "command dword 10 value";
-	const char *cdw11 = "command dword 11 value";
-	const char *cdw12 = "command dword 12 value";
-	const char *cdw13 = "command dword 13 value";
-	const char *cdw14 = "command dword 14 value";
-	const char *cdw15 = "command dword 15 value";
-	const char *input = "data input or output file";
-	const char *show = "print command before sending";
-	const char *re = "set dataflow direction to receive";
-	const char *wr = "set dataflow direction to send";
-	const char *prefill = "prefill buffers with known byte-value, default 0";
+	const char *dtyp = "Data Structure Type (required): "
+	                   "0=NVM Subsystem Info, 1=Port Info, 2=Controller List, "
+	                   "3=Controller Info, 4=Optional Command List, 5=Mgmt EP Buffer Cmd Support List";
+	const char *portid = "Port Identifier (used for DTYP 1,5)";
+	const char *ctrlid = "Controller Identifier (used for DTYP 2,3,4)";
+	const char *iocsi = "I/O Command Set Identifier (used for DTYP 4,5)";
 	const char *csi = "Command slot identifier";
-	const char *doff = "Data offset";
-	const char *timeout = "Timeout in milliseconds";
-	const char *flood = "Flood command";
-	const char *namespace_desired = "desired namespace";
-	const char *raw_dump = "dump output in binary format";
-	const char *latency = "output latency statistics";
-	const char *dry = "show command instead of sending";
 
-	_cleanup_huge_ struct nvme_mem_huge mh = { 0, };
 	_cleanup_nvme_dev_ struct nvme_dev *dev = NULL;
-	_cleanup_fd_ int dfd = -1, mfd = -1;
-	int flags;
-	int mode = 0644;
-	void *data = NULL;
-	_cleanup_free_ void *mdata = NULL;
-	int err = 0;
-	__u32 result;
-	const char *cmd_name = NULL;
 	struct timeval start_time, end_time;
-	nvme_print_flags_t flags_t;
-	struct nvme_mi_transport_mctp_async *mctp = malloc(sizeof(struct nvme_mi_transport_mctp_async));
-	if (!mctp) {
-		fprintf(stderr, "Error: Failed to allocate memory for MCTP transport.\n");
-		return -1;
-	}
+	int err = 0;
 
-	struct passthru_config cfg = {
-		.opcode		= 0,
-		.flags		= 0,
-		.prefill	= 0,
-		.rsvd		= 0,
-		.namespace_id	= 0,
-		.data_len	= 0,
-		.metadata_len	= 0,
-		.cdw2		= 0,
-		.cdw3		= 0,
-		.cdw10		= 0,
-		.cdw11		= 0,
-		.cdw12		= 0,
-		.cdw13		= 0,
-		.cdw14		= 0,
-		.cdw15		= 0,
-		.csi 		= 0,
-		.input_file	= "",
-		.metadata	= "",
-		.raw_binary	= false,
-		.show_command	= false,
-		.dry_run	= false,
-		.read		= false,
-		.write		= false,
-		.latency	= false,
-		.offset		= 0,
-		.timeout_ms	= nvme_cfg.timeout,
-		.flood		= false,
+	struct config {
+		__u8 dtyp;
+		__u8 portid;
+		__u16 ctrlid;
+		__u8 iocsi;
+		__u8 csi;
 	};
 
-  OPT_ARGS(opts) = {
-		  OPT_BYTE("opcode",       'O', &cfg.opcode,       opcode),
-		  OPT_BYTE("flags",        'f', &cfg.flags,        cflags),
-		  OPT_BYTE("prefill",      'p', &cfg.prefill,      prefill),
-		  OPT_SHRT("rsvd",         'R', &cfg.rsvd,         rsvd),
-		  OPT_UINT("namespace-id", 'n', &cfg.namespace_id, namespace_desired),
-		  OPT_UINT("data-len",     'l', &cfg.data_len,     data_len),
-		  OPT_UINT("metadata-len", 'm', &cfg.metadata_len, metadata_len),
-		  OPT_UINT("cdw2",         '2', &cfg.cdw2,         cdw2),
-		  OPT_UINT("cdw3",         '3', &cfg.cdw3,         cdw3),
-		  OPT_UINT("cdw10",        '4', &cfg.cdw10,        cdw10),
-		  OPT_UINT("cdw11",        '5', &cfg.cdw11,        cdw11),
-		  OPT_UINT("cdw12",        '6', &cfg.cdw12,        cdw12),
-		  OPT_UINT("cdw13",        '7', &cfg.cdw13,        cdw13),
-		  OPT_UINT("cdw14",        '8', &cfg.cdw14,        cdw14),
-		  OPT_UINT("cdw15",        '9', &cfg.cdw15,        cdw15),
-		  OPT_FILE("input-file",   'i', &cfg.input_file,   input),
-		  OPT_FILE("metadata",     'M', &cfg.metadata,     metadata),
-		  OPT_FLAG("raw-binary",   'b', &cfg.raw_binary,   raw_dump),
-		  OPT_FLAG("show-command", 's', &cfg.show_command, show),
-		  OPT_FLAG("dry-run",      'd', &cfg.dry_run,      dry),
-		  OPT_FLAG("read",         'r', &cfg.read,         re),
-		  OPT_FLAG("write",        'w', &cfg.write,        wr),
-		  OPT_FLAG("latency",      'T', &cfg.latency,      latency),
-		  OPT_UINT("csi",          'c', &cfg.csi,          csi),
-		  OPT_UINT("timeout",      't', &cfg.timeout_ms,   timeout),
-          OPT_UINT("doff",         'o', &cfg.offset,       doff),
-		  OPT_FLAG("flood",        'F', &cfg.flood,        flood),
-		  OPT_END()
-  };
+	struct config cfg = {
+		.dtyp = 0,
+		.portid = 0,
+		.ctrlid = 0,
+		.iocsi = 0,
+		.csi = 0,
+	};
+
+	OPT_ARGS(opts) = {
+		OPT_UINT("dtyp", 'd', &cfg.dtyp, dtyp),
+		OPT_UINT("portid", 'p', &cfg.portid, portid),
+		OPT_UINT("ctrlid", 'c', &cfg.ctrlid, ctrlid),
+		OPT_UINT("iocsi", 'i', &cfg.iocsi, iocsi),
+		OPT_UINT("csi", 's', &cfg.csi, csi),
+		OPT_END()
+	};
 
 	err = parse_and_open(&dev, argc, argv, desc, opts);
 	if (err)
 		return err;
 
-	err = validate_output_format(nvme_cfg.output_format, &flags_t);
-	if (err < 0) {
-		nvme_show_error("Invalid output format");
-		return err;
+	/* Validate Data Structure Type */
+	if (cfg.dtyp > NVME_MI_DS_MGMT_EP_BUFFER_CMD_SUPPORT_LIST) {
+		printf("ERROR: Invalid Data Structure Type (DTYP): %u. Valid range: 0-5\n", cfg.dtyp);
+		return -EINVAL;
 	}
-
-	if (cfg.opcode & 0x01) {
-		cfg.write = true;
-		flags = O_RDONLY;
-		dfd = mfd = STDIN_FILENO;
-	}
-
-	if (cfg.opcode & 0x02) {
-		cfg.read = true;
-		flags = O_WRONLY | O_CREAT;
-		dfd = mfd = STDOUT_FILENO;
-	}
-
-	if (strlen(cfg.input_file)) {
-		dfd = open(cfg.input_file, flags, mode);
-		if (dfd < 0) {
-			nvme_show_perror(cfg.input_file);
-			return -EINVAL;
-		}
-	}
-
-	if (cfg.metadata && strlen(cfg.metadata)) {
-		mfd = open(cfg.metadata, flags, mode);
-		if (mfd < 0) {
-			nvme_show_perror(cfg.metadata);
-			return -EINVAL;
-		}
-	}
-
-	if (cfg.metadata_len) {
-		mdata = malloc(cfg.metadata_len);
-		if (!mdata)
-			return -ENOMEM;
-
-		if (cfg.write) {
-			if (read(mfd, mdata, cfg.metadata_len) < 0) {
-				err = -errno;
-				nvme_show_perror("failed to read metadata write buffer");
-				return err;
-			}
-		} else {
-			memset(mdata, cfg.prefill, cfg.metadata_len);
-		}
-	}
-
-	if (cfg.data_len) {
-		data = nvme_alloc_huge(cfg.data_len, &mh);
-		if (!data)
-			return -ENOMEM;
-
-		memset(data, cfg.prefill, cfg.data_len);
-		if (!cfg.read && !cfg.write) {
-			nvme_show_error("data direction not given");
-			return -EINVAL;
-		} else if (cfg.write) {
-			if (read(dfd, data, cfg.data_len) < 0) {
-				err = -errno;
-				nvme_show_error("failed to read write buffer %s", strerror(errno));
-				return err;
-			}
-		}
-	}
-
-	if (cfg.show_command || cfg.dry_run) {
-		printf("opcode       : %02x\n", cfg.opcode);
-		printf("flags        : %02x\n", cfg.flags);
-		printf("rsvd1        : %04x\n", cfg.rsvd);
-		printf("nsid         : %08x\n", cfg.namespace_id);
-		printf("cdw2         : %08x\n", cfg.cdw2);
-		printf("cdw3         : %08x\n", cfg.cdw3);
-		printf("data_len     : %08x\n", cfg.data_len);
-		printf("metadata_len : %08x\n", cfg.metadata_len);
-		printf("addr         : %"PRIx64"\n", (uint64_t)(uintptr_t)data);
-		printf("metadata     : %"PRIx64"\n", (uint64_t)(uintptr_t)mdata);
-		printf("cdw10        : %08x\n", cfg.cdw10);
-		printf("cdw11        : %08x\n", cfg.cdw11);
-		printf("cdw12        : %08x\n", cfg.cdw12);
-		printf("cdw13        : %08x\n", cfg.cdw13);
-		printf("cdw14        : %08x\n", cfg.cdw14);
-		printf("cdw15        : %08x\n", cfg.cdw15);
-		printf("timeout_ms   : %08x\n", cfg.timeout);
-		printf("csi	         : %02x\n", cfg.csi);
-		printf("doff         : %08x\n", cfg.offset);
-	}
-	if (cfg.dry_run)
-		return 0;
 
 	gettimeofday(&start_time, NULL);
 
-	if(!cfg.flood)
-		create_mctp_listener_thread(dev->mi.net, dev->mi.eid, 4096, mctp);
-
-
-	err = nvme_mi_admin_batch_passthru(dev, cfg.opcode, cfg.flags,
-				      cfg.rsvd,
-				      cfg.namespace_id, cfg.cdw2,
-				      cfg.cdw3, cfg.cdw10,
-				      cfg.cdw11, cfg.cdw12, cfg.cdw13,
-				      cfg.cdw14,
-				      cfg.cdw15, cfg.data_len, data,
-				      cfg.metadata_len,
-				      mdata, cfg.timeout, &result,
-					  cfg.csi, cfg.offset);
+	err = nvme_amd_read_data_structure(dev, cfg.dtyp, cfg.portid, cfg.ctrlid, cfg.iocsi, cfg.csi);
 
 	gettimeofday(&end_time, NULL);
-	cmd_name = nvme_cmd_to_string(admin, cfg.opcode);
-	if (cfg.latency)
-		printf("%s Command %s latency: %llu us\n", admin ? "Admin" : "IO",
-		       strcmp(cmd_name, "Unknown") ? cmd_name : "Vendor Specific",
-		       elapsed_utime(start_time, end_time));
 
-	if (err < 0) {
-		nvme_show_error("%s: %s", __func__, nvme_strerror(errno));
-	} else if (err) {
-		nvme_show_status(err);
-	} else  {
-		fprintf(stderr, "%s Command %s is Success and result: 0x%08x\n", admin ? "Admin" : "IO",
-			strcmp(cmd_name, "Unknown") ? cmd_name : "Vendor Specific", result);
-		if (cfg.read)
-			passthru_print_read_output(cfg, data, dfd, mdata, mfd, err);
+	if (err == 0) {
+		double elapsed_time = (end_time.tv_sec - start_time.tv_sec) + 
+		                     (end_time.tv_usec - start_time.tv_usec) / 1000000.0;
+		printf("\nCommand completed successfully in %.3f seconds\n", elapsed_time);
 	}
 
-	if(!cfg.flood)
-		stop_mctp_listener_thread(mctp);
-
 	return err;
-	
-    
 }
-#endif
