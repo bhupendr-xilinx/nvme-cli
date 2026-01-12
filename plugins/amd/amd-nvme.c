@@ -884,8 +884,8 @@ static int nvme_amd_read_data_structure(struct nvme_dev *dev, __u8 dtyp, __u8 po
 		__u16 *ctrl_list = (__u16 *)resp.buffer;
 		int num_controllers = rdl / 2;
 		printf("=== Controller List Data Structure ===\n");
-		printf("Number of Controllers: %d\n", num_controllers);
-		for (int i = 0; i < num_controllers; i++) {
+		printf("Number of Controllers: %d\n", ctrl_list[0]);
+		for (int i = 1; i < num_controllers; i++) {
 			printf("  Controller %d ID: 0x%04x\n", i, ctrl_list[i]);
 		}
 		break;
