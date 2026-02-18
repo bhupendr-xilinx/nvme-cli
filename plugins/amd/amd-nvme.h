@@ -18,6 +18,8 @@ PLUGIN(NAME("amd", "AMD vendor specific extensions", NVME_VERSION),
 		ENTRY("reset", "Submit a NVMe-MI Reset command, return results", reset)
 		ENTRY("shutdown", "Submit a NVMe-MI Shutdown command, return results", amd_shutdown)
 		ENTRY("read-nvme-mi-data-structure", "Submit a NVMe-MI Read Data Structure command, return results", read_nvme_mi_data_structure)
+		ENTRY("smbus-freq-get", "Get SMBus/I2C Frequency configuration, return results", smbus_freq_get)
+		ENTRY("smbus-freq-set", "Set SMBus/I2C Frequency configuration, return results", smbus_freq_set)
 	)
 );
 

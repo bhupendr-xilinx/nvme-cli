@@ -882,10 +882,10 @@ static int nvme_amd_read_data_structure(struct nvme_dev *dev, __u8 dtyp, __u8 po
 	case NVME_MI_DS_CONTROLLER_LIST: {
 		/* Controller List is a simple list of 2-byte Controller IDs */
 		__u16 *ctrl_list = (__u16 *)resp.buffer;
-		int num_controllers = rdl / 2;
+		int total_entries = rdl / 2;
 		printf("=== Controller List Data Structure ===\n");
 		printf("Number of Controllers: %d\n", ctrl_list[0]);
-		for (int i = 1; i < num_controllers; i++) {
+		for (int i = 1; i < total_entries; i++) {
 			printf("  Controller %d ID: 0x%04x\n", i, ctrl_list[i]);
 		}
 		break;
@@ -2421,5 +2421,162 @@ static int read_nvme_mi_data_structure(int argc, char **argv, struct command *cm
 		printf("\nCommand completed successfully in %.3f seconds\n", elapsed_time);
 	}
 
+	return err;
+}
+
+static int nvme_amd_smbus_freq_get(struct nvme_dev *dev, __u8 cid, __u8 pid, __u8 csi)
+{
+	struct nvme_mi_mi_req_hdr mi_req = {0};
+	struct {
+		struct nvme_mi_mi_resp_hdr mi_hdr;
+		char buffer[4096];
+	} resp = { 0 };
+
+	size_t len = 4096;
+	int rc = 0;
+	const char *freq_str[] = {"Reserved", "100 kHz", "400 kHz", "1 MHz"};
+
+	mi_req.opcode = 4;
+	mi_req.cdw0 = ((uint32_t)cid) | ((uint32_t)pid << 24);
+	printf("SMBus/I2C Frequency Get - CID: %d, PID: %d, CSI: %d\n", cid, pid, csi);
+	rc = nvme_mi_mi_xfer(dev->mi.ep, &mi_req, 0, &resp.mi_hdr, &len, csi);
+	assert(rc == 0);
+
+	printf("\nSTATUS:%d \n",resp.mi_hdr.status);
+	if (cid == 1) {
+		__u8 sfreq = resp.mi_hdr.nmresp[0];
+		printf("SMBus/I2C Frequency (SFREQ): 0x%02x\n", sfreq);
+		if (sfreq >= 1 && sfreq <= 3) {
+			printf("Frequency: %s\n", freq_str[sfreq]);
+		} else {
+			printf("Frequency: Reserved/Invalid\n");
+		}
+	}
+	return 0;
+}
+
+static int smbus_freq_get(int argc, char **argv, struct command *cmd, struct plugin *plugin)
+{
+    const char *desc =(
+			"Send a Configuration get NVMe-MI command to retrieve SMBus/I2C Frequency.\n"
+			"Return results."
+		);
+
+    const char *cid = "Configuration identifier (required)";
+	const char *pid = "Port ID";
+	const char *csi = "Command slot identifier";
+	
+	_cleanup_nvme_dev_ struct nvme_dev *dev = NULL;
+	struct timeval start_time, end_time;
+	int status = 0, err = 0;
+	struct get_config cfg = {
+		.cid = 1,
+		.pid = 0,
+		.csi = 0,
+	};
+
+	OPT_ARGS(opts) = {
+		  OPT_UINT("cid", 'i', &cfg.cid, cid),
+		  OPT_UINT("pid", 'p', &cfg.pid, pid),
+		  OPT_UINT("csi", 'c', &cfg.csi, csi),
+		  OPT_END()
+	};
+
+	err = parse_and_open(&dev, argc, argv, desc, opts);
+	if (err)
+		return err;
+
+	gettimeofday(&start_time, NULL);
+	err = nvme_amd_smbus_freq_get(dev, cfg.cid, cfg.pid, cfg.csi);
+						 
+	gettimeofday(&end_time, NULL);
+
+	return err;
+}
+
+static int nvme_amd_smbus_freq_set(struct nvme_dev *dev, __u8 cid, __u8 pid, __u8 sfreq, __u8 csi)
+{
+	struct {
+		struct nvme_mi_mi_resp_hdr resp_hdr;
+		uint8_t resp_buf[4096];
+	} resp = { 0 };
+
+	struct nvme_mi_mi_req_hdr req_hdr = { 0 };
+
+	size_t len = 4096;
+	int rc = 0;
+	const char *freq_str[] = {"Reserved", "100 kHz", "400 kHz", "1 MHz"};
+
+	//Opcode for Configuration set
+	req_hdr.opcode = 3;
+
+	//store cid, sfreq and pid field
+	req_hdr.cdw0 = ((uint32_t)cid & 0xFF) | 
+	               (((uint32_t)sfreq & 0x0F) << 8) | 
+	               ((uint32_t)pid << 24);
+	printf("cdw0 field value is: %08x\n", req_hdr.cdw0);
+
+	printf("Setting SMBus/I2C Frequency to: %s\n", freq_str[sfreq]);
+
+	//Send the message
+	rc = nvme_mi_mi_xfer(dev->mi.ep, &req_hdr, 0, &resp.resp_hdr, &len, csi);
+	assert(rc == 0);
+
+	if (resp.resp_hdr.status) {
+		int status = parse_mi_resp_status(resp.resp_hdr.status, resp.resp_hdr.nmresp);
+		if (status != 1) return -1;
+	} else {
+		printf("SMBus/I2C Frequency set successfully\n");
+	}
+
+	return 0;
+}
+
+static int smbus_freq_set(int argc, char **argv, struct command *cmd, struct plugin *plugin)
+{
+    const char *desc =(
+			"Send a Configuration set NVMe-MI command to set SMBus/I2C Frequency.\n"
+			"Return results.\n");
+
+    const char *cid = "Configuration identifier (required)";
+	const char *pid = "Port ID";
+	const char *sfreq = "SMBus/I2C Frequency: 1=100kHz, 2=400kHz, 3=1MHz";
+	const char *csi = "Command slot identifier";
+
+	_cleanup_nvme_dev_ struct nvme_dev *dev = NULL;
+	struct timeval start_time, end_time;
+	int status = 0, err = 0;
+
+	struct smbus_freq_config {
+		__u8 cid;
+		__u8 pid;
+		__u8 sfreq;
+		__u8 csi;
+	};
+
+	struct smbus_freq_config cfg = {
+		.cid = 1,
+		.pid = 0,
+		.sfreq = 0,
+		.csi = 0,
+	};
+
+	OPT_ARGS(opts) = {
+		  OPT_UINT("cid", 'i', &cfg.cid, cid),
+		  OPT_UINT("pid", 'p', &cfg.pid, pid),
+		  OPT_UINT("sfreq", 'f', &cfg.sfreq, sfreq),
+		  OPT_UINT("csi", 'c', &cfg.csi, csi),
+		  OPT_END()
+	};
+
+	err = parse_and_open(&dev, argc, argv, desc, opts);
+	if (err)
+		return err;
+
+	gettimeofday(&start_time, NULL);
+	err = nvme_amd_smbus_freq_set(dev, cfg.cid, cfg.pid, cfg.sfreq, cfg.csi);
+
+	gettimeofday(&end_time, NULL);
+	
 	return err;
 }
